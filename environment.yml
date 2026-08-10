@@ -1,0 +1,11 @@
+# Conda is used only to create an isolated Python 3.11 interpreter. All package
+# versions are pinned and resolved through pip via requirements-dev.txt — see
+# docs/adr/0003-dependency-management-strategy.md for why (single resolver, avoids
+# conda-forge/pip version-availability drift, which is a common source of "works on
+# my machine" breakage in mixed environments).
+name: tws-forecast
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip

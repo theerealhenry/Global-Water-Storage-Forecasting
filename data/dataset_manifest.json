@@ -1,0 +1,22 @@
+{
+  "generated": "2026-08-10",
+  "source": "Zindi - A Step Ahead of Drought: Forecasting Global Water Storage Challenge",
+  "files": {
+    "Train.csv": {
+      "sha256": "97ff1912b35871574a01900c24a792a9a418653e87f01dccc1788c6838d94b1f",
+      "data_rows": 2154021,
+      "size_bytes": 289126551
+    },
+    "Test.csv": {
+      "sha256": "314da7996fa947b30797d82ea8d0ea34240fe52683ecf102a21c37f00f61c196",
+      "data_rows": 280961,
+      "size_bytes": 34365988
+    },
+    "SampleSubmission.csv": {
+      "sha256": "77881bc7257791d583c5a1f496a5639864d490a0237515338fc5305ec943db22",
+      "data_rows": 280961,
+      "size_bytes": 6105524
+    }
+  },
+  "note": "Hashes/row counts pinned per ADR-0002 (manifest-based versioning, no DVC). If any file's hash changes, treat as a new dataset version and log an ADR before retraining."
+}

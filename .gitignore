@@ -1,0 +1,12 @@
+data/*.csv
+mlruns/
+mlflow.db
+*.pyc
+__pycache__/
+.pytest_cache/
+.ipynb_checkpoints/
+.env
+.venv/
+*.egg-info/
+.gittest
+

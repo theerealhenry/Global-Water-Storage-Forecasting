@@ -1,0 +1,11 @@
+# Open Questions Register
+
+Distinct from `docs/ASSUMPTIONS.md` — assumptions are things we currently believe and act on; these are things we know we don't know yet and expect to stay unresolved for a while. Kept here so they don't quietly disappear into notebooks.
+
+| Question | Why it matters | Current evidence | Planned experiment | Status |
+|---|---|---|---|---|
+| Why exactly does persistence RMSE spike to 0.898 in 2015 vs. 0.50-0.63 in prior years? | Determines how much to trust 2002-2014 patterns for the 2016-2018 test period; affects trend/recency-weighting design | Confirmed anomaly, cause unknown (partial-year artifact vs. genuine data-quality/regime shift) | `PROJECT_PLAN.md` Project Phase 1, experiment 2 (hard gate) | Open — next immediate step |
+| How much of the masked regime is genuinely predictable from environmental forcing (SPEI, soil moisture) alone, independent of any TWS history? | Sets a ceiling on how much external data and environmental features alone can achieve without state reconstruction | Linear reconstruction of TWS_t from concurrent covariates achieves only 0.806-0.821, barely above the global mean (0.912) — but this is a linear-only test | Nonlinear (GBM) version of the same test, Project Phase 5 | Open |
+| How stable are spatial relationships across the full 2002-2015 record, not just within a single month? | A-003 depends on this | Same-month correlation measured (0.981); no temporal-stability test yet | Covariate-shift / spatial-feature ablation, Project Phase 1/6 | Open |
+| Does external hydrological data actually improve genuine out-of-time performance, or only in-sample fit? | Central to whether Project Phase 6 is worth the effort and provenance-gate overhead | Not yet tested — no external data sourced | Masked-vs-unmasked RMSE impact test, Project Phase 6 | Open |
+| Is the public/private leaderboard split uniformly random across all test rows, or could it be structured in some way we can't observe? | Affects how much to trust the public leaderboard as a signal | Test.csv is chronologically sorted; no direct evidence on split methodology beyond Zindi's stated "~30%/~70%" language | Not independently testable within the rules (submission probing is explicitly out of scope) | Open, likely permanently |
