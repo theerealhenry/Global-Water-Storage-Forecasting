@@ -36,7 +36,7 @@ from tws_forecast.utils.seeds import RANDOM_SEED, set_seed
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["MaskingScenario", "apply_masking"]
+__all__ = ["MaskingScenario", "apply_masking", "apply_blackout_curve"]
 
 TransitionPattern = Literal["abrupt", "ramp_in", "ramp_out"]
 
@@ -228,6 +228,122 @@ def apply_masking(
         scenario.source_rationale, int(final_mask.sum()), int(candidate_mask.sum()),
         blackout_start.date(), blackout_end.date(), scenario.exception_rate,
         scenario.source_rationale,
+    )
+
+    return out
+
+
+def apply_blackout_curve(
+    df: pd.DataFrame,
+    k_distribution: list[int] | tuple[int, ...],
+    n_windows: int,
+    seed: int = RANDOM_SEED,
+) -> pd.DataFrame:
+    """Inject up to ``n_windows`` independent, per-location synthetic
+    blackout runs into ``df``, each run's length ``k`` resampled with
+    replacement from ``k_distribution``.
+
+    Reproduces Experiment 3's multi-window blackout-curve design
+    (``notebooks/02_forecastability.ipynb`` §9-10) as a reusable primitive
+    that ``validation/tiers.py``'s Tier 2 calls, rather than each rebuilding
+    its own copy of "pick some locations, mask their most recent k months."
+    Distinct from ``apply_masking``: that function applies one shared
+    date-window scenario to (potentially many) locations at once;
+    this one gives *each* selected location its own independently-drawn
+    window length, which a single ``MaskingScenario`` can't represent —
+    so it lives here, next to ``apply_masking``, as this module's second
+    masking primitive, rather than being hand-rolled inside ``tiers.py``
+    (``docs/PHASE2_EXECUTION_PLAN.md`` step 2.6's explicit requirement that
+    no tier module reimplement masking logic itself).
+
+    Locations are drawn *without* replacement (each gets at most one
+    simulated run, so overlapping draws on the same location never need
+    reconciling); ``k`` is drawn *with* replacement from ``k_distribution``,
+    matching how the real distribution was built (Experiment 4).
+
+    For each selected location, the run masks that location's own most
+    recent ``min(k, rows available for that location in df)`` rows —
+    "most recent available," not "most recent calendar month," so a
+    location with a real gap inside the window (Experiments 1/3's grid-
+    irregularity finding) is handled correctly by construction rather than
+    by special-casing: the run always contains exactly that many real rows.
+
+    Parameters
+    ----------
+    df:
+        Must already carry a ``location_id`` column — i.e. this is a frame
+        produced by ``validation.splitters.expanding_window_splits``, not a
+        raw ``Train.csv`` load. This function does not recompute
+        ``location_id`` itself, so there is exactly one code path
+        (``state.reconstruction.location_id_from_lat_lon``, via the
+        splitter) that can produce it.
+    k_distribution:
+        Values to resample ``k`` from, with replacement — pass
+        ``phase1_constants.BLACKOUT_K_DISTRIBUTION`` (via a scenario
+        config's ``k_distribution`` field) to match the real measured
+        distribution, never an invented one.
+    n_windows:
+        Number of locations to draw a blackout run for (capped at the
+        number of distinct locations actually present in ``df``).
+    seed:
+        Two calls with the same seed, ``df``, and parameters produce
+        byte-identical output.
+
+    Returns
+    -------
+    pd.DataFrame
+        A copy of ``df`` with ``TWS_t`` nulled for the selected rows,
+        ``TWS_t_masked``/``regime`` recomputed to match, and a new
+        ``simulated_k`` column (``NaN`` for untouched rows, the drawn
+        ``k`` for masked rows) — this is what lets the error-decomposition
+        table (step 2.7) bucket by the real k values instead of an
+        approximate one.
+    """
+    if "location_id" not in df.columns:
+        raise ValueError(
+            "apply_blackout_curve requires a location_id column — pass a "
+            "frame produced by validation.splitters.expanding_window_splits, "
+            "not a raw data load."
+        )
+    if n_windows < 1:
+        raise ValueError(f"n_windows must be >= 1, got {n_windows}")
+    if len(k_distribution) == 0:
+        raise ValueError("k_distribution must not be empty")
+
+    set_seed(seed)
+    out = df.copy()
+    out["time"] = pd.to_datetime(out["time"])
+
+    locations = out["location_id"].unique()
+    n_draws = min(n_windows, len(locations))
+
+    mask_flags = pd.Series(False, index=out.index)
+    simulated_k = pd.Series(np.nan, index=out.index)
+
+    if n_draws > 0:
+        rng = np.random.default_rng(seed)
+        chosen_locations = rng.choice(locations, size=n_draws, replace=False)
+        chosen_ks = rng.choice(np.asarray(k_distribution), size=n_draws, replace=True)
+
+        for loc, k in zip(chosen_locations, chosen_ks):
+            loc_idx = out.index[out["location_id"] == loc]
+            if len(loc_idx) == 0:
+                continue
+            ordered_idx = out.loc[loc_idx, "time"].sort_values().index
+            streak = min(int(k), len(ordered_idx))
+            selected_idx = ordered_idx[-streak:]
+            mask_flags.loc[selected_idx] = True
+            simulated_k.loc[selected_idx] = int(k)
+
+    out.loc[mask_flags, "TWS_t"] = np.nan
+    out["TWS_t_masked"] = out["TWS_t"].isna()
+    out["regime"] = np.where(out["TWS_t_masked"], "masked", "observed")
+    out["simulated_k"] = simulated_k
+
+    logger.info(
+        "apply_blackout_curve: drew %d/%d requested windows (locations "
+        "available=%d), %d rows newly masked",
+        n_draws, n_windows, len(locations), int(mask_flags.sum()),
     )
 
     return out
