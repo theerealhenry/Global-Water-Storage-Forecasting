@@ -1,0 +1,22 @@
+# Tier 1 (forecastability): standard time-respecting expanding-window CV
+# over the training period, no masking simulation applied. Answers: can the
+# model predict next-month TWS under normal, fully-observed conditions?
+# Baseline A (0.5247) is the realistic ceiling for this tier.
+
+name: expanding_window
+tier: 1
+scenario_type: expanding_window
+description: >
+  Standard time-respecting expanding-window CV over the training period, no
+  masking simulation applied. The earliest fold's training portion always
+  covers the full verified gap-free 2004-2010 span; the final fold's
+  validation window reaches into 2015, the anomalous final training year.
+source_rationale: >
+  Project Phase 2 step 2.3 (src/tws_forecast/validation/splitters.py);
+  docs/ARCHITECTURE.md §11, Tier 1.
+
+splitter:
+  n_folds: 5
+  val_window_months: 6
+  min_train_months: 84
+  anchor_to_2004: true
