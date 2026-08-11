@@ -64,8 +64,10 @@ class TierResult:
     """The standard output every tier function returns.
 
     ``predictions`` is keyed by the ``FORECAST_ORIGIN_COLUMNS`` (plus a
-    ``fold`` column identifying which fold/anchor produced each row, and
-    tier-specific metadata columns — ``simulated_k`` for Tiers 2/3,
+    ``fold`` column identifying which fold/anchor produced each row,
+    ``true_tws_t`` — the real, ground-truth current-month value, even for
+    rows whose ``TWS_t`` the model itself was never shown — and
+    tier-specific metadata columns: ``simulated_k`` for Tiers 2/3,
     ``replay_offset`` for Tier 3) — this is the frame
     ``validation/decomposition.py`` (step 2.7) reads from to build the
     error-decomposition table; nothing here computes that table itself.
@@ -130,6 +132,13 @@ def run_tier1(
         pred_df = val_fold[FORECAST_ORIGIN_COLUMNS].copy()
         pred_df["prediction"] = preds
         pred_df["target"] = val_fold["target"].values
+        # The real, ground-truth current-month TWS_t — always equal to what
+        # the model was actually shown here (Tier 1 never masks), but kept
+        # under this name for consistency with Tiers 2/3, where it's the
+        # *pre-masking* value the model did NOT see. validation/
+        # decomposition.py's extreme-value/rapid-change slices (step 2.7)
+        # read this column, not the model's own (possibly masked) input.
+        pred_df["true_tws_t"] = val_fold["TWS_t"].values
         pred_df["fold"] = fold_idx
         all_predictions.append(pred_df)
 
@@ -175,6 +184,11 @@ def run_tier2(
         # model handles the *range* of masking scenarios (docs/PHASE2_
         # EXECUTION_PLAN.md's blackout-curve tier is meant to sample
         # broadly, per Experiment 3's own multi-window design).
+        # Captured before masking — the real value the model was NOT shown
+        # for rows apply_blackout_curve selects, used only by validation/
+        # decomposition.py's diagnostic slices, never fed back to the model.
+        true_tws_t = val_fold["TWS_t"].values
+
         masked_val_fold = apply_blackout_curve(
             val_fold,
             k_distribution=config.k_distribution,
@@ -190,6 +204,7 @@ def run_tier2(
         pred_df = masked_val_fold[[*FORECAST_ORIGIN_COLUMNS, "simulated_k"]].copy()
         pred_df["prediction"] = preds
         pred_df["target"] = masked_val_fold["target"].values
+        pred_df["true_tws_t"] = true_tws_t
         pred_df["fold"] = fold_idx
         all_predictions.append(pred_df)
 
@@ -304,6 +319,7 @@ def run_tier3(
                 continue  # real grid irregularity — no rows this calendar month
 
             origin_rows = attach_forecast_origin_columns(origin_rows)
+            true_tws_t = origin_rows["TWS_t"].to_numpy(copy=True)
             if k is not None:
                 origin_rows["TWS_t"] = np.nan
             origin_rows["TWS_t_masked"] = origin_rows["TWS_t"].isna()
@@ -315,6 +331,7 @@ def run_tier3(
             pred_df = origin_rows[[*FORECAST_ORIGIN_COLUMNS, "simulated_k", "replay_offset"]].copy()
             pred_df["prediction"] = preds
             pred_df["target"] = origin_rows["target"].values
+            pred_df["true_tws_t"] = true_tws_t
             pred_df["fold"] = anchor_idx
             anchor_rows.append(pred_df)
 
