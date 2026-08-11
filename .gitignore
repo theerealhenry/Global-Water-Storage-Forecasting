@@ -1,4 +1,4 @@
-data/*.csv
+data/raw/*.csv
 mlruns/
 mlflow.db
 *.pyc

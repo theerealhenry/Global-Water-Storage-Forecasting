@@ -6,7 +6,7 @@ Entry for Zindi/ITU AI for Good — *A Step Ahead of Drought: Forecasting Global
 
 ## Layout
 
-- `data/` — raw competition CSVs (gitignored) + `dataset_manifest.json` (integrity hashes)
+- `data/raw/` — raw competition CSVs (gitignored) + `dataset_manifest.json` (integrity hashes)
 - `docs/` — architecture, plan, analysis, ADRs
 - `src/tws_forecast/` — package code (data, state, features, validation, models, pipelines, serving, utils)
 - `configs/` — run configs

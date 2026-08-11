@@ -50,27 +50,24 @@ and resolved, e.g. mlflow forces pandas below 3.0).
 
 ## 5. Install the project package in editable mode
 
-Once `src/tws_forecast/` has a `pyproject.toml` (Project Phase 0 foundation work — not yet
-created), run:
+`pyproject.toml` now exists at the repo root, so this works:
 
 ```bash
 pip install -e .
 ```
 
-so imports work consistently across notebooks, scripts, and tests.
+so imports work consistently across notebooks, scripts, and tests (`import tws_forecast`, etc.).
 
 ## 6. Git
 
-This folder isn't a git repo yet. Initialize it yourself, locally, so you keep control of the
-remote/branch setup (conda/pip steps above don't touch git):
+Git is already initialized, with a remote configured at
+`https://github.com/theerealhenry/Global-Water-Storage-Forecasting.git`. Ongoing workflow is the
+usual local cycle:
 
 ```bash
-git init
 git add .
-git commit -m "chore: project skeleton (docs, ADRs, submissions subsystem, src layout, pinned deps)"
-git branch -M main
-git remote add origin <your-github-repo-url>
-git push -u origin main
+git commit -m "<message>"
+git push
 ```
 
 ## Updating dependencies later
