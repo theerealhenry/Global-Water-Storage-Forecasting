@@ -115,18 +115,77 @@ Our competitive advantage should not be "a better LightGBM" — it should be a b
 
 ## Project Phase 2 — Validation harness
 
-**Objective:** a validation scheme that won't lie to us, built on what Project Phase 1 established rather than assumptions.
+**Objective:** a validation scheme that won't lie to us, built on what Project Phase 1 established rather
+than assumptions. **Rewritten 2026-08-11, after Phase 1's completion** (see ADR-0004,
+`docs/adr/0004-phase1-closure-phase2-validation-design.md`) — every mechanism below is bound to a specific
+number Phase 1 measured, not a generic/synthetic placeholder. This section is a concrete, ordered build
+plan, not just a checklist: each numbered step below produces a specific file, gets its own tests, and
+gets its own commit, per the project's standing one-file-per-commit workflow.
 
-- [ ] **Time-respecting CV**: expanding-window splits, not random K-fold
-- [ ] **Streak-aware masking simulator**: nulls `TWS_t` (and dependent features) in contiguous multi-month blocks per location, matching the real structure — never a flat row-independent probability
-- [ ] **Three validation tiers, each answering a different question, not just three sets of folds:** Tier 1 (forecastability) — can we predict a future month under normal observation conditions? Tier 2 (blackout) — can we forecast after losing the current TWS observation, and how gracefully does accuracy degrade with staleness? Tier 3 (test-regime) — can we reproduce the exact observation/masking/environmental conditions the actual test months represent?
-- [ ] **Two integrity safeguards, as explicit rules, not just intentions:** (1) Tier 3 (test-matched) validation is for diagnosis and robustness assessment only — final model selection uses predefined historical folds, not repeated tuning against test-specific analogs. (2) Test row ordering is descriptive metadata only — no `test_row_index`/`relative_test_position` features, no inference about the public/private split from row order.
-- [ ] **Error decomposition table**, filled in for every model from here on (standing artifact, not a one-off): overall / masked / unmasked / by staleness bucket (1-2mo, 3-4mo, 5+mo) / by hemisphere / on extreme-TWS and rapid-change slices
-- [ ] **Degradation slope** (ΔRMSE / Δmonths-since-observation) tracked as a fourth metric alongside RMSE — how gracefully, not just how accurately, the model handles staleness
-- [ ] Internal target ladder (< 0.572 / < 0.559 / < 0.53 / < 0.50), used as a promotion rule against the *full* error-decomposition table, not the headline number alone — a model that wins on aggregate while being fragile in one regime doesn't get promoted
-- [ ] Every experiment run logged (Project Phase 0's flat log, migrating to MLflow): params, CV fold scores per tier, full decomposition, git commit hash, data version
+### 2.0 Design constants carried from Phase 1 (read before writing any code)
 
-**Definition of Done:** running the harness against a trivial model produces all three tiers, the full decomposition table, and the degradation slope; we both agree the scheme can't leak the future and honestly reflects the real blackout structure.
+These are the exact, already-measured numbers Phase 2's code must reproduce, not re-derive or approximate:
+
+| Constant | Value | Source |
+|---|---|---|
+| Real blackout staleness-to-target distribution | k=2 (×4), k=3 (×3), k=4 (×2), k=5 (×1), k=6 (×1), k=7 (×1) | Experiment 4, `notebooks/02_forecastability.ipynb` §11.2 |
+| Real test FULL-month offsets (fully observed) | [0, 4, 9, 15, 34, 38] months from first test month (2015-09) | Experiment 4 §11.2 |
+| Real test BLACKOUT-month offsets | [5, 6, 10, 11, 12, 16, 17, 18, 19, 20, 21, 39] | Experiment 4 §11.2 |
+| Real absent-month structure | main hard gap 2017-07 to 2018-06 (12 months); 4 smaller scattered gaps (§17.3) | Experiment 7 §17.3 |
+| Baseline A (oracle persistence, FULL only) | 0.5247 | Experiment 4 §11.4 |
+| Baseline B (last-known, BLACKOUT only) | 0.7145 | Experiment 4 §11.4 |
+| Baseline C (seasonal climatology, all months) | 0.8170 | notebook 01 EDA |
+| Baseline D (Hybrid, realistic naive floor) | 0.6573 | Experiment 4 §11.4 |
+| Calendar-month coverage gap | October: 0% of test rows; Jan/Feb/Mar/Jun/Jul/Sep/Dec: ~11% each; Apr/May/Aug/Nov: ~5.5% each | Experiment 6 §15.4, A-011 |
+| Verified gap-free training span | 2004-01 through 2010-12 (84 months) | Experiment 3 §9.1 |
+| Missing training months (22 total) | 5 pre-2011 (unexplained), 17 from 2011 (battery-management pattern) | Experiment 7 §17.2/17.4 |
+| Staleness × ACF relationship | nonlinear (ρ^k form); linear k×acf1 term detects ~0 R², AR(1) model explains R²=0.448 | Experiment 5 §13-14, A-010 |
+
+**Implementation rule:** these constants live in exactly one place — `src/tws_forecast/validation/phase1_constants.py` — each with a comment pointing back to its exact notebook cell/section, so nobody has to go hunting through the notebook to find where a number came from, and so a future Phase 1 revision can't silently desync from Phase 2's code.
+
+### 2.1 Time-respecting CV split design
+
+- [ ] `src/tws_forecast/validation/splits.py`: expanding-window split generator over the training period (2002-05 through 2015-08), never random K-fold (per the confirmed non-stationary trend, notebook 01 §7, and the 2015 anomaly, A-004).
+- [ ] Fold boundaries chosen to (a) always include at least one full pass through the verified clean 2004-2010 span in the earliest fold's training portion, and (b) hold out progressively later years, ending with a final fold whose validation window is adjacent to 2015 (the anomalous year) specifically, so the harness is forced to confront A-004's finding rather than average it away in an earlier, easier fold.
+- [ ] Explicit unit test: assert no validation-fold row's `time` value is ≤ any same-fold training row's `time` value (the literal leakage check), plus a test that fold boundaries are deterministic given a fixed `RANDOM_SEED`.
+
+### 2.2 Streak-aware masking simulator
+
+- [ ] `src/tws_forecast/validation/masking_simulator.py`: for a given training fold, select blackout onset points per location and null `TWS_t` (and any column derived from it) for a run of consecutive months, where the run length is drawn from the **real k-distribution in §2.0** (resampled with replacement), not a geometric/uniform prior.
+- [ ] Two named modes, matching Phase 1's two validated methodologies directly (not reinvented): `mode="curve"` reproduces Experiment 3's multi-window blackout-curve simulation (for Tier 2, general staleness-response testing across a wide range of k); `mode="replay"` reproduces Experiment 4's Method B (for Tier 3, exact real-calendar replay).
+- [ ] Per-month row-count variability (Experiments 1 and 3's finding that no single month has the full 15,715-location grid, in either file) is preserved by construction — the simulator operates on whatever rows exist for a given month, never assumes a complete panel.
+- [ ] Unit tests against a small synthetic fixture: assert the simulated blackout-length distribution matches the real k-distribution within sampling tolerance; assert masked rows' `TWS_t` is null but all other columns remain populated (matching the real Test.csv contract in `docs/DATA_DICTIONARY.md`).
+
+### 2.3 Three validation tiers, each answering a different question
+
+- [ ] **Tier 1 (forecastability)**: standard expanding-window CV, no masking simulation — can the model predict next-month TWS under normal (fully observed) conditions? This is the tier Baseline A (0.5247) is the realistic ceiling for.
+- [ ] **Tier 2 (blackout)**: `masking_simulator.py` in `mode="curve"` applied within each Tier 1 fold — can the model forecast after losing the current observation, and does its degradation slope (§2.6) resemble the real one from Experiment 3/5 (nonlinear, ACF-modulated)? This is the tier that directly tests Project Phase 4's state-reconstruction features once they exist.
+- [ ] **Tier 3 (test-regime)**: `masking_simulator.py` in `mode="replay"`, anchored to real calendar months (respecting A-011's October gap and 2x/1x recurrence pattern) — does the model reproduce Baseline D's 0.6573 ballpark as its own naive-model sanity check, and how far below that does the real candidate model get? This is the diagnostic tier, per the integrity safeguard below.
+
+### 2.4 Two integrity safeguards, as explicit rules enforced in code, not just intentions
+
+- [ ] Tier 3 is diagnostic/robustness-only by construction: `src/tws_forecast/validation/harness.py`'s model-selection/promotion function must not accept a Tier-3-only score as sufficient for promotion — it should raise if called without Tier 1 and Tier 2 scores also present.
+- [ ] No `test_row_index`/`relative_test_position`-style feature is permitted anywhere in `src/tws_forecast/features/` — enforced by a `tests/test_no_leakage_features.py` that scans the feature module's output columns for disallowed name patterns, not just a documentation promise.
+
+### 2.5 Error decomposition table
+
+- [ ] `src/tws_forecast/validation/decomposition.py`: standard columns — overall / masked / unmasked / **by staleness bucket using the REAL k=2,3,4,5,6,7 buckets from §2.0** (not an invented 1-2mo/3-4mo/5+mo scheme) / **cross-cut by ACF quartile within each staleness bucket** (per A-010's finding that k alone under-describes the regime) / by hemisphere / on extreme-TWS and rapid-change slices.
+- [ ] Every model run from here on logs a full decomposition table, not just an overall RMSE — this is the artifact the promotion rule (§2.7) reads from.
+
+### 2.6 Degradation slope, with the AR(1) curve as a built-in sanity check
+
+- [ ] ΔRMSE/Δk tracked per model, per ACF quartile — and plotted alongside Experiment 5's already-validated AR(1) theoretical curve as a reference line, so a new model's degradation behavior is visually and numerically comparable to the mechanistic baseline from day one, not assessed in a vacuum.
+
+### 2.7 Internal target ladder, recalibrated against the real floor (A-009)
+
+- [ ] Promotion thresholds updated from the Phase-1-preview framing (`COMPETITIVE_ANALYSIS.md` §6) into actual code constants: **< 0.6573 clears the realistic naive floor (Baseline D)**; **< 0.572 matches the in-sample oracle ceiling** (a much higher bar, now correctly understood as such); **< 0.559 beats MOHAR's public score**; **< 0.53 serious contender**; **< 0.50 exceptional**. A model is only promoted when it clears the relevant threshold on the **full decomposition table** (§2.5), not the headline number alone — a model that wins on aggregate while being fragile on the k=5-7 buckets specifically (the hardest, per A-010) does not get promoted.
+
+### 2.8 Experiment logging migration
+
+- [ ] Extend `reports/experiments/experiment_log.csv` (Project Phase 0's flat log) with the new tier-specific columns (`cv_tier1_rmse`, `cv_tier2_rmse`, `cv_tier3_rmse` already exist as columns — Phase 2 is the first phase to actually populate them, not leave them `N/A`).
+- [ ] MLflow migration (SQLite backend) begins once the harness itself is stable — not before, so tooling doesn't block validation-design work.
+
+**Definition of Done:** running the harness against a trivial model (e.g. Baseline D itself, or a bare LightGBM on raw columns) produces all three tiers, the full decomposition table (including the ACF-quartile × staleness-bucket cross-cut), and the degradation slope with the AR(1) reference overlay; Tier 3's naive-model score reproduces Baseline D's 0.6573 within a small tolerance (validating the harness faithfully reproduces Phase 1's measured reality, per ADR-0004); the leakage tests (§2.1, §2.4) pass; we both agree the scheme can't leak the future and honestly reflects the real blackout structure.
 
 ---
 
