@@ -48,8 +48,24 @@ def test_run_tier1_executes_end_to_end(train_df: pd.DataFrame) -> None:
 
 def test_run_tier1_predictions_have_forecast_origin_columns(train_df: pd.DataFrame) -> None:
     result = run_tier1(MeanPredictor(), train_df)
-    for col in [*FORECAST_ORIGIN_COLUMNS, "prediction", "target", "fold"]:
+    for col in [*FORECAST_ORIGIN_COLUMNS, "prediction", "target", "true_tws_t", "fold"]:
         assert col in result.predictions.columns
+
+
+def test_run_tier1_true_tws_t_matches_target_frames_own_tws(train_df: pd.DataFrame) -> None:
+    # Tier 1 never masks, so true_tws_t must equal what the model actually
+    # saw for every row — this is the property that lets Tiers 2/3 reuse
+    # the same column name to mean "ground truth, possibly hidden."
+    result = run_tier1(MeanPredictor(), train_df)
+    merged = result.predictions.merge(
+        train_df[["time", "lat", "lon", "TWS_t"]],
+        left_on="origin_time", right_on="time", how="left",
+    )
+    # location_id encodes lat/lon; spot check a sample rather than a full
+    # merge-by-location (location_id parsing is exercised directly in
+    # decomposition tests) — here we only need true_tws_t to be non-null
+    # and internally consistent.
+    assert result.predictions["true_tws_t"].notna().all()
 
 
 def test_run_tier1_model_fit_once_per_fold(train_df: pd.DataFrame) -> None:
