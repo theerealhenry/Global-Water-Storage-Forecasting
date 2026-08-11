@@ -22,9 +22,23 @@ from typing import Literal
 
 import pandas as pd
 
-__all__ = ["ForecastOrigin"]
+__all__ = ["ForecastOrigin", "location_id_from_lat_lon"]
 
 Regime = Literal["observed", "masked"]
+
+
+def location_id_from_lat_lon(lat: float, lon: float) -> str:
+    """The single, canonical way to turn a grid cell's coordinates into a
+    stable ``location_id`` string — ``"{lat}_{lon}"``.
+
+    Exported (not a private helper) specifically so bulk/vectorized code
+    (e.g. ``validation/splitters.py``, which computes this column for
+    millions of rows at once rather than building one ``ForecastOrigin``
+    per row) can produce values guaranteed identical to
+    ``ForecastOrigin.from_row``'s, rather than each maintaining its own
+    copy of the same formatting rule.
+    """
+    return f"{float(lat)}_{float(lon)}"
 
 
 @dataclass(frozen=True)
@@ -116,7 +130,7 @@ class ForecastOrigin:
         """
         origin_time = pd.Timestamp(row["time"])
         target_time = origin_time + pd.DateOffset(months=horizon)
-        location_id = f"{float(row['lat'])}_{float(row['lon'])}"
+        location_id = location_id_from_lat_lon(row["lat"], row["lon"])
         regime: Regime = "masked" if _is_masked(row) else "observed"
 
         return cls(
