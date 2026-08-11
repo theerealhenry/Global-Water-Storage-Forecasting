@@ -8,8 +8,9 @@ import pandas as pd
 import pytest
 
 from tws_forecast.data.loaders import load_train
+from tws_forecast.validation.phase1_constants import CLEAN_TRAIN_SPAN_END, CLEAN_TRAIN_SPAN_START
 from tws_forecast.validation.splitters import FORECAST_ORIGIN_COLUMNS
-from tws_forecast.validation.tiers import TierResult, run_tier1, run_tier2, run_tier3
+from tws_forecast.validation.tiers import TierResult, _select_replay_anchors, run_tier1, run_tier2, run_tier3
 
 
 class MeanPredictor:
@@ -161,6 +162,46 @@ def test_run_tier3_invalid_n_anchors_raises(train_df: pd.DataFrame) -> None:
 def test_run_tier3_single_anchor(train_df: pd.DataFrame) -> None:
     result = run_tier3(MeanPredictor(), train_df, n_anchors=1)
     assert len(result.fold_rmses) == 1
+
+
+# --- _select_replay_anchors: clean-span restriction (regression test) ---------
+#
+# Bug found and fixed during Project Phase 2 step 2.11's proof run
+# (notebooks/03_validation_harness.ipynb): _select_replay_anchors originally
+# spanned df's own full min/max time range, which let a candidate anchor's
+# replay pattern run into the documented post-2010 missing-month gaps (A-012)
+# or start with almost no prior fit history near TRAIN_PERIOD_START -- both
+# measured to pull Tier 3's score far from Baseline D's validated 0.6573.
+# These tests pin the fix: every anchor, and its full replay pattern, must
+# stay within the verified gap-free 2004-2010 span.
+
+
+def test_select_replay_anchors_stays_within_clean_span(train_df: pd.DataFrame) -> None:
+    pattern_length = 40  # matches configs/validation/test_regime_replay.yaml's real offsets
+    anchors = _select_replay_anchors(train_df, pattern_length, n_anchors=3)
+    assert len(anchors) >= 1
+    for anchor in anchors:
+        pattern_end = anchor + pd.DateOffset(months=pattern_length - 1)
+        assert anchor >= pd.Timestamp(CLEAN_TRAIN_SPAN_START), (
+            f"anchor {anchor.date()} starts before the verified clean span"
+        )
+        assert pattern_end <= pd.Timestamp(CLEAN_TRAIN_SPAN_END), (
+            f"anchor {anchor.date()}'s replay pattern (through {pattern_end.date()}) "
+            "runs past the verified clean span -- would overlap the documented post-2010 gaps"
+        )
+
+
+def test_select_replay_anchors_excludes_pre_clean_span_history(train_df: pd.DataFrame) -> None:
+    # train_df (the golden fixture) starts 2002-05, well before CLEAN_TRAIN_SPAN_START (2004-01) --
+    # confirms the fix actually constrains anchors rather than merely happening to avoid this range.
+    assert train_df["time"].min() < pd.Timestamp(CLEAN_TRAIN_SPAN_START)
+    anchors = _select_replay_anchors(train_df, pattern_length_months=40, n_anchors=5)
+    assert all(a >= pd.Timestamp(CLEAN_TRAIN_SPAN_START) for a in anchors)
+
+
+def test_select_replay_anchors_empty_when_pattern_longer_than_clean_span(train_df: pd.DataFrame) -> None:
+    # The clean span is 84 months (2004-01 to 2010-12) -- a pattern longer than that can never fit.
+    assert _select_replay_anchors(train_df, pattern_length_months=200, n_anchors=1) == []
 
 
 # --- TierResult ---------------------------------------------------------------
