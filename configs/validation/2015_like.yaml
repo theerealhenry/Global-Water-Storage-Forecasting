@@ -1,0 +1,30 @@
+# A named scenario approximating 2015-like conditions, per
+# docs/ARCHITECTURE.md §11's example scenario list. Isolates a single
+# validation window covering exactly Jan-Aug 2015 -- the full window the
+# persistence-RMSE anomaly (Experiment 2) was measured over -- so a
+# candidate can be stress-tested against the anomalous regime directly,
+# instead of that regime being averaged into one fold among several in a
+# multi-fold CV summary.
+
+name: 2015_like
+tier: 1
+scenario_type: expanding_window
+description: >
+  A single expanding-window fold (n_folds=1, val_window_months=8) whose
+  validation window is exactly 2015-01 through 2015-08 -- with
+  val_window_months=8 and TRAIN_PERIOD_END=2015-08, the training cutoff
+  lands at 2014-12 automatically, regardless of anchor_to_2004, so no
+  masking is involved (Train.csv has no masked rows) -- this scenario
+  isolates the *regime* question (does 2002-2014 history generalize into
+  2015) from the masking question entirely.
+source_rationale: >
+  Experiment 2 (notebooks/02_forecastability.ipynb §7-8) and
+  docs/ASSUMPTIONS.md A-004/A-007 (the 2015 persistence-RMSE anomaly);
+  docs/ARCHITECTURE.md §11's named-scenario example list ("a scenario
+  approximating 2015-like conditions").
+
+splitter:
+  n_folds: 1
+  val_window_months: 8
+  min_train_months: 84
+  anchor_to_2004: true
