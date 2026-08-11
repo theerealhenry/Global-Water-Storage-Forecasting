@@ -1,0 +1,43 @@
+# Tier 2 (blackout): within each expanding-window fold, inject synthetic
+# contiguous blackout runs whose length k is resampled with replacement
+# from the real staleness-to-target distribution (Experiment 4). Reproduces
+# Experiment 3's multi-window blackout-curve design. Answers: can the model
+# forecast after losing the current observation, and does its degradation
+# slope resemble the real, ACF-modulated one from Experiments 3/5?
+
+name: blackout_curve
+tier: 2
+scenario_type: blackout_curve
+description: >
+  Streak-aware synthetic blackout injection: for each fold, sample
+  n_windows contiguous blackout runs, each run's length k drawn with
+  replacement from k_distribution (the real, empirically measured
+  staleness-to-target distribution, not a synthetic geometric/uniform
+  prior). This is the tier Project Phase 4's state-reconstruction features
+  are directly tested against.
+source_rationale: >
+  Experiment 3 (notebooks/02_forecastability.ipynb §9-10, the multi-window
+  blackout-degradation curve) and Experiment 4's BLACKOUT_K_DISTRIBUTION
+  (src/tws_forecast/validation/phase1_constants.py); docs/ARCHITECTURE.md
+  §11, Tier 2.
+
+splitter:
+  n_folds: 5
+  val_window_months: 6
+  min_train_months: 84
+  anchor_to_2004: true
+
+# The real staleness-to-target k for each of the 12 real blackout test
+# months, in TEST_BLACKOUT_OFFSETS order — resampled with replacement, not
+# reproduced in this exact order (order here is inherited only because it's
+# the canonical listing; the simulator draws from this set, it does not
+# replay it positionally the way test_regime_replay.yaml does).
+k_distribution: [2, 3, 2, 3, 4, 2, 3, 4, 5, 6, 7, 2]
+
+# Number of blackout windows sampled per fold — matches Experiment 3's own
+# design (15 overlapping windows over the verified clean 2004-2010 span).
+n_windows: 15
+
+# Matches Experiment 1's finding of a small handful of scattered,
+# non-recurring unmasked rows per real blackout month.
+exception_rate: 0.002
