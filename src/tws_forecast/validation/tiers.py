@@ -33,6 +33,7 @@ import pandas as pd
 from tws_forecast.utils.dates import month_index, month_index_to_timestamp
 from tws_forecast.utils.seeds import RANDOM_SEED
 from tws_forecast.validation.masking_simulator import apply_blackout_curve
+from tws_forecast.validation.phase1_constants import CLEAN_TRAIN_SPAN_END, CLEAN_TRAIN_SPAN_START
 from tws_forecast.validation.scenarios import load_scenario
 from tws_forecast.validation.splitters import (
     FORECAST_ORIGIN_COLUMNS,
@@ -223,10 +224,28 @@ def run_tier2(
 def _select_replay_anchors(
     df: pd.DataFrame, pattern_length_months: int, n_anchors: int
 ) -> list[pd.Timestamp]:
-    """Evenly-spaced candidate anchor months such that (a) at least one
-    month of history exists strictly before the anchor to fit on, and (b)
-    the full ``pattern_length_months``-month replay pattern fits within
-    ``df``'s available time range."""
+    """Evenly-spaced candidate anchor months, restricted to the verified
+    gap-free 2004-2010 span (``phase1_constants.CLEAN_TRAIN_SPAN_START/
+    END``) so every anchor's full ``pattern_length_months``-month replay
+    window lands on real, uninterrupted historical data — reproducing
+    Experiment 4 Method B's own design ("8 independent windows of the
+    verified clean 2004-2010 span," ``notebooks/02_forecastability.ipynb``
+    §11.3), not merely spanning ``df``'s full available date range.
+
+    Bug found and fixed during Project Phase 2 step 2.11's proof run
+    (``notebooks/03_validation_harness.ipynb``): the original version of
+    this function used ``df["time"].min()/max()`` as its anchor bounds,
+    which let a candidate anchor's replay pattern run into the documented
+    post-2010 missing-month gaps (A-012) or start with almost no prior fit
+    history near ``TRAIN_PERIOD_START`` — both measured to pull Tier 3's
+    score far away from Baseline D's validated 0.6573 (0.894 observed
+    with the old, unrestricted anchor selection, at ``n_anchors=3``) even
+    though the underlying per-anchor tier logic and masking were already
+    correct. See ``docs/ASSUMPTIONS.md`` for the full write-up.
+    """
+    clean_start_idx = month_index(CLEAN_TRAIN_SPAN_START)
+    clean_end_idx = month_index(CLEAN_TRAIN_SPAN_END)
+
     times = pd.to_datetime(df["time"])
     if len(times) == 0:
         return []
@@ -234,8 +253,8 @@ def _select_replay_anchors(
     min_idx = month_index(times.min())
     max_idx = month_index(times.max())
 
-    earliest_anchor_idx = min_idx + 1  # leave >=1 month of prior history
-    latest_anchor_idx = max_idx - pattern_length_months + 1
+    earliest_anchor_idx = max(clean_start_idx, min_idx + 1)  # leave >=1 month of prior history
+    latest_anchor_idx = min(clean_end_idx, max_idx) - pattern_length_months + 1
 
     if latest_anchor_idx < earliest_anchor_idx:
         return []
