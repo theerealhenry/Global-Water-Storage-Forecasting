@@ -139,7 +139,7 @@ Phase 4), `validation/phase1_constants.py`, `validation/splitters.py`, `validati
 **Build order** (2.1 → 2.12, each one commit — full detail per step, including exact function signatures,
 tests, and deliverables, in `docs/PHASE2_EXECUTION_PLAN.md`):
 
-- [ ] 2.1 Prerequisites — seeds, minimal config loader, `phase1_constants.py`
+- [x] 2.1 Prerequisites — seeds, minimal config loader, `phase1_constants.py` (7 commits, 42/42 tests passing; constants re-verified byte-exact against `notebooks/02_forecastability.ipynb`'s executed output cells before being hardcoded)
 - [ ] 2.2 `ForecastOrigin` schema
 - [ ] 2.3 Expanding-window splitter (time-respecting, 2015-anomaly-confronting fold design)
 - [ ] 2.4 `MaskingScenario` + streak-aware masking simulator
