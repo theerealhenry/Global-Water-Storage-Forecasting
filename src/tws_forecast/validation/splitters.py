@@ -34,7 +34,7 @@ from tws_forecast.validation.phase1_constants import (
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["expanding_window_splits", "FORECAST_ORIGIN_COLUMNS"]
+__all__ = ["expanding_window_splits", "FORECAST_ORIGIN_COLUMNS", "attach_forecast_origin_columns"]
 
 # The ForecastOrigin schema's fields (state/reconstruction.py), attached as
 # columns to every fold this module returns. Design note: a real fold can be
@@ -52,9 +52,15 @@ FORECAST_ORIGIN_COLUMNS = [
 ]
 
 
-def _attach_forecast_origin_columns(df: pd.DataFrame, horizon: int = 1) -> pd.DataFrame:
+def attach_forecast_origin_columns(df: pd.DataFrame, horizon: int = 1) -> pd.DataFrame:
     """Vectorized equivalent of calling ``ForecastOrigin.from_row`` on every
-    row of ``df`` and attaching the results as columns."""
+    row of ``df`` and attaching the results as columns.
+
+    Public (not a private helper) because ``validation/tiers.py``'s Tier 3
+    also needs it — Tier 3 builds its own anchor-based windows rather than
+    going through ``expanding_window_splits``, but must still produce frames
+    carrying the same ``FORECAST_ORIGIN_COLUMNS`` everything else does.
+    """
     out = df.copy()
     origin_time = pd.to_datetime(out["time"])
     out["origin_time"] = origin_time
@@ -177,8 +183,8 @@ def expanding_window_splits(
         train_mask = df["time"] <= cutoff_time
         val_mask = (df["time"] > cutoff_time) & (df["time"] <= val_end_time)
 
-        train_fold = _attach_forecast_origin_columns(df.loc[train_mask])
-        val_fold = _attach_forecast_origin_columns(df.loc[val_mask])
+        train_fold = attach_forecast_origin_columns(df.loc[train_mask])
+        val_fold = attach_forecast_origin_columns(df.loc[val_mask])
 
         logger.info(
             "Fold cutoff=%s: train %d rows, val %d rows (val window %s to %s)",
