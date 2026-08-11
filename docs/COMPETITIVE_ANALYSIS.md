@@ -107,6 +107,18 @@ Worked example: if masked RMSE = 0.57 and unmasked RMSE = 0.54, overall RMSE ≈
 | < 0.53 | Serious first-place contender |
 | < 0.50 | Exceptional — investigate why before trusting it |
 
+**Important context, added after Project Phase 1 Experiment 4** (`notebooks/02_forecastability.ipynb`
+§11-12): the 0.572 figure is Baseline A (oracle persistence), measured in-sample where `TWS_t` is
+always known. It is **not reachable on the real test structure**, where 12 of the 18 test months
+(66.7%) have no current TWS observation at all. The realistic "do nothing clever" floor for the actual
+test structure is **Baseline D (Hybrid), measured at 0.6573** via a ground-truth-validated replay of
+the real 18-month FULL/BLACKOUT pattern onto historical data (two independent methods agreed within
+0.005 RMSE — see Experiment 4's write-up). The ladder above remains the right set of thresholds to beat,
+but "beating 0.572" should be understood as "beating the in-sample skill ceiling," not "clearing the
+naive bar a trivial submission would score" — 0.6573 is the actual bar a genuinely naive Baseline-D-style
+submission clears. A model landing between 0.572 and 0.6573 is still meaningfully better than doing
+nothing, even though it wouldn't "beat persistence" by this table's original framing.
+
 **These are not universal pass/fail thresholds on the overall number alone.** A model can hit a low overall RMSE while being dangerously dependent on the easy (unmasked) regime — e.g. overall 0.520 with masked 0.57 / unmasked 0.40 looks better in aggregate than overall 0.525 with masked 0.55 / unmasked 0.47, but the second is more robust to whatever the true private-set masked/unmasked ratio turns out to be. **Promotion rule: a model is only promoted up the champion ladder (§9) when it improves the relevant CV tier without materially degrading another important regime** — judged from the full error-decomposition table (§10), not the headline number.
 
 ## 7. Master hypothesis catalogue
