@@ -94,7 +94,7 @@ Our competitive advantage should not be "a better LightGBM" — it should be a b
 
 **Ordered experiment sequence** — each builds on the last, run in this order:
 
-1. [x] **Reproduce the masking process.** Confirmed: 18 non-contiguous test months, same 15,715 locations as train, blackout months ~99.7%+ masked with scattered non-recurring exceptions (not fixed stations).
+1. [x] **Reproduce the masking process.** Now rigorously reproduced end-to-end in `notebooks/02_forecastability.ipynb` (Project Phase 0's informal check upgraded to a real, executed notebook). Confirmed and refined: 18 non-contiguous test months split cleanly bimodal — 6 fully observed (0% masked) and 12 blackout months (99.58%-99.97% masked, no in-between); every test month is short of the full 15,715-location grid as rows (38-195 locations absent, not merely masked — a new finding, not previously stated per-month); blackout-month partial recovery is exhaustively confirmed scattered/non-recurring (all 66 month-pairs checked, overlap 0-29, mean 1.53, zero always-unmasked locations), refining the earlier "0-2 overlap" claim and surfacing a weak same-calendar-month echo (Feb 2016 vs Feb 2017) that doesn't change the overall conclusion; and a sourced (not yet formally Experiment-7-verified) preview cross-check shows the test set's entirely-absent months (Jul 2017-Jun 2018) closely matching the documented GRACE→GRACE-FO hard gap.
 2. [ ] **Persistence ceiling and the 2015 anomaly (hard gate).** True out-of-time persistence RMSE by year is already computed (see Key Findings); resolve *why* 2015 spikes to 0.898 before finalizing any trend, recency-weighting, or climatology feature — partial-year artifact vs. genuine late-period data-quality/regime shift changes how much we trust 2002-2014 patterns for the Sep 2015-Dec 2018 test data — the test period's first month (September 2015) is the month immediately after training data ends (August 2015).
 3. [ ] **Blackout-degradation curve — the highest-priority single experiment in the project.** Artificial contiguous multi-month blackout on historical data (e.g. train 2002-2010, blackout 2011-02→2011-08, forecast through it), RMSE vs. months-since-last-observation. Build it **stratified**, not as one average curve — cut by latitude band, season, per-location ACF/persistence, and drought regime. An average curve going 0.55→0.79 over 7 months could hide two very different populations (e.g. high-ACF locations degrading gently 0.53→0.56 vs. low-ACF locations collapsing 0.59→0.85); the stratified version is what actually motivates and calibrates the historical-signature features in Project Phase 4.
 4. [ ] **Last-known-state baseline** (not climatology) — see the four distinct baselines in Project Phase 3.
@@ -103,9 +103,9 @@ Our competitive advantage should not be "a better LightGBM" — it should be a b
 7. [ ] **Real GRACE/GRACE-FO mission timeline (external research, not leakage).** NASA/JPL publish the documented mission gap history — grounds "months since the gap started" features in the actual mission calendar instead of inferring it purely from our sparse sample of masked test months.
 
 **Engineering foundation (parallel, not blocking the sequence above):**
-- [ ] `src/tws_forecast/data/loaders.py`, `pandera` schema contract
-- [ ] Formal EDA notebook (`notebooks/01_eda.ipynb`) and forecastability notebook (`notebooks/02_forecastability.ipynb`) reproducing the above with saved figures
-- [ ] Unit tests for loaders/schema
+- [x] `src/tws_forecast/data/loaders.py`, `pandera` schema contract
+- [x] Formal EDA notebook (`notebooks/01_eda.ipynb`) and forecastability notebook (`notebooks/02_forecastability.ipynb`, Experiment 1 section) reproducing the above with saved figures
+- [x] Unit tests for loaders/schema (`tests/test_loaders.py`, `tests/test_contracts.py`, golden fixtures — 20/20 passing)
 
 **Definition of Done:** all 7 experiments answered or explicitly deferred with a reason; the 2015 anomaly specifically is resolved (or we have a documented, evidence-based decision on how to handle it if it can't be fully explained); both notebooks run top-to-bottom and regenerate all figures.
 
