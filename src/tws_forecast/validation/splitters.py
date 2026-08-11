@@ -24,6 +24,7 @@ import numpy as np
 import pandas as pd
 
 from tws_forecast.state.reconstruction import location_id_from_lat_lon
+from tws_forecast.utils.dates import month_index, month_index_to_timestamp
 from tws_forecast.utils.seeds import RANDOM_SEED, set_seed
 from tws_forecast.validation.phase1_constants import (
     CLEAN_TRAIN_SPAN_END,
@@ -49,22 +50,6 @@ FORECAST_ORIGIN_COLUMNS = [
     "origin_time", "target_time", "horizon", "information_cutoff",
     "location_id", "regime",
 ]
-
-
-def _month_index(ts: pd.Timestamp | str) -> int:
-    """Months since year 0, as a plain integer — lets fold-boundary
-    arithmetic use simple integer spacing instead of repeated date-offset
-    arithmetic."""
-    ts = pd.Timestamp(ts)
-    return ts.year * 12 + ts.month
-
-
-def _month_index_to_timestamp(idx: int) -> pd.Timestamp:
-    year, month = divmod(idx, 12)
-    if month == 0:
-        year -= 1
-        month = 12
-    return pd.Timestamp(year=year, month=month, day=1)
 
 
 def _attach_forecast_origin_columns(df: pd.DataFrame, horizon: int = 1) -> pd.DataFrame:
@@ -154,11 +139,11 @@ def expanding_window_splits(
     if val_window_months < 1:
         raise ValueError(f"val_window_months must be >= 1, got {val_window_months}")
 
-    train_start_idx = _month_index(TRAIN_PERIOD_START)
-    train_end_idx = _month_index(TRAIN_PERIOD_END)
+    train_start_idx = month_index(TRAIN_PERIOD_START)
+    train_end_idx = month_index(TRAIN_PERIOD_END)
 
     first_cutoff_idx = (
-        _month_index(CLEAN_TRAIN_SPAN_END)
+        month_index(CLEAN_TRAIN_SPAN_END)
         if anchor_to_2004
         else train_start_idx + min_train_months - 1
     )
@@ -167,8 +152,8 @@ def expanding_window_splits(
     if last_cutoff_idx < first_cutoff_idx:
         raise ValueError(
             "Not enough months between the earliest required training cutoff "
-            f"({_month_index_to_timestamp(first_cutoff_idx).date()}) and the "
-            f"latest possible cutoff ({_month_index_to_timestamp(last_cutoff_idx).date()}) "
+            f"({month_index_to_timestamp(first_cutoff_idx).date()}) and the "
+            f"latest possible cutoff ({month_index_to_timestamp(last_cutoff_idx).date()}) "
             f"to fit val_window_months={val_window_months}. Reduce "
             "val_window_months, or set anchor_to_2004=False."
         )
@@ -186,8 +171,8 @@ def expanding_window_splits(
     df["time"] = pd.to_datetime(df["time"])
 
     for cutoff_idx in cutoff_idxs:
-        cutoff_time = _month_index_to_timestamp(cutoff_idx)
-        val_end_time = _month_index_to_timestamp(cutoff_idx + val_window_months)
+        cutoff_time = month_index_to_timestamp(cutoff_idx)
+        val_end_time = month_index_to_timestamp(cutoff_idx + val_window_months)
 
         train_mask = df["time"] <= cutoff_time
         val_mask = (df["time"] > cutoff_time) & (df["time"] <= val_end_time)
