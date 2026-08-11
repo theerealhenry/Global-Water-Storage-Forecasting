@@ -1,0 +1,51 @@
+# Tier 3 (test-regime): replays the real 18-month test calendar structure
+# (6 FULL + 12 BLACKOUT months, real offsets, real per-month staleness)
+# onto a historical analog window, reproducing Experiment 4's Method B
+# exactly. Diagnostic / robustness tier only: docs/ARCHITECTURE.md §11 and
+# validation/harness.py (step 2.9) forbid promoting a candidate on a
+# Tier-3-only score.
+
+name: test_regime_replay
+tier: 3
+scenario_type: test_regime_replay
+description: >
+  Anchors the real FULL/BLACKOUT calendar-offset pattern (respecting the
+  October coverage gap and the 2x/1x calendar-month recurrence imbalance,
+  A-011) onto historical windows of the verified clean 2004-2010 span,
+  ground-truth-scorable because the true historical TWS is known there.
+  Tier 3's naive-model score on this scenario should reproduce Baseline
+  D's 0.6573 within a small tolerance — the harness's own sanity check
+  (ADR-0004).
+source_rationale: >
+  Experiment 4 Method B (notebooks/02_forecastability.ipynb §11.3, replay
+  of the real temporal pattern onto 8 independent windows of the verified
+  clean 2004-2010 span); full_offsets / blackout_offsets /
+  blackout_k_by_offset copied verbatim from
+  src/tws_forecast/validation/phase1_constants.py (TEST_FULL_OFFSETS,
+  TEST_BLACKOUT_OFFSETS, BLACKOUT_K_BY_OFFSET) — checked for drift in
+  tests/test_scenarios.py; docs/ARCHITECTURE.md §11, Tier 3.
+
+# Offsets in months from the pattern's own month 0 (2015-09 in the real
+# test set; an arbitrary historical anchor month when replayed here).
+full_offsets: [0, 4, 9, 15, 34, 38]
+blackout_offsets: [5, 6, 10, 11, 12, 16, 17, 18, 19, 20, 21, 39]
+
+# Staleness-to-target k for each blackout offset above.
+blackout_k_by_offset:
+  5: 2
+  6: 3
+  10: 2
+  11: 3
+  12: 4
+  16: 2
+  17: 3
+  18: 4
+  19: 5
+  20: 6
+  21: 7
+  39: 2
+
+# Experiment 4 replayed the exact real pattern with no scattered exceptions
+# layered on top (Method B tested the calendar structure itself, not the
+# exception noise) — kept at 0 here for the same reason.
+exception_rate: 0.0
