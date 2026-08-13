@@ -149,8 +149,8 @@ tests, and deliverables, in `docs/PHASE2_EXECUTION_PLAN.md`):
 - [x] 2.8 Leakage firewall as executable checks (future-row shuffle, historical-only, rolling-cutoff, masking no-leak, disallowed-feature-name scan) — `validation/leakage_tests.py`, 3 commits, 178/178 tests passing; each of the three generic checks proven against both a correct and a deliberately leaky toy example (not just exercised on code that already passes) before Project Phase 4 has any real feature/signature functions to check
 - [x] 2.9 Harness orchestrator + promotion rule (Tier-3-only promotion hard-blocked in code) — `validation/harness.py`, 2 commits, 195/195 tests passing; promotion ladder evaluated against Tier 2's overall RMSE (the tier structurally analogous to Baseline D's mixed regime, without relying on Tier 3); manually verified a weak mean-only baseline clears exactly the `naive_floor` rung on the golden fixture, and self-comparison against its own report as baseline shows zero regression
 - [x] 2.10 Experiment log migration + MLflow kickoff — `validation/experiment_log.py`, 2 commits, 208/208 tests passing; single `log_candidate()` entrypoint writes both halves atomically (flat CSV row continuing the EXP-NNN sequence from Phase 1's EXP-001..EXP-007, plus one MLflow run against a SQLite-backed `mlflow.db` with the full decomposition tables + degradation slope logged as CSV artifacts); `mlflow==3.15.1` (already pinned) verified installable and working end-to-end in the dev sandbox; manually verified a real `evaluate_candidate()`/`promote()` result on the golden fixture logs correctly to both a temp CSV and a temp MLflow run (metrics, params, and 3 decomposition artifacts all confirmed present via `MlflowClient`); real project `mlflow.db`/`mlruns/` deliberately left uncreated until the step-2.11 notebook's first real run, so this step doesn't itself add a spurious history entry
-- [ ] 2.11 Validation notebook (`notebooks/03_validation_harness.ipynb`) — proof run against Baseline D logic and a bare LightGBM, all three tiers, decomposition table, degradation-slope plot
-- [ ] 2.12 Documentation closure pass (this section, `ARCHITECTURE.md` §20, ADR follow-ups)
+- [x] 2.11 Validation notebook (`notebooks/03_validation_harness.ipynb`) — proof run against Baseline D logic and a bare LightGBM, all three tiers, decomposition table, degradation-slope plot; 3 commits (notebook, figures, EXP-008/EXP-009 experiment log rows), real MLflow runs (`mlflow.db`/`mlruns/`) logged for the first time. **Phase-defining sanity check PASSES**: Tier 3 reproduces Baseline D's 0.6573 within tolerance (0.6319, diff 0.0254) — but getting there required finding and fixing two real issues along the way, not zero. (1) A genuine bug in `_select_replay_anchors` (anchors weren't restricted to the verified clean 2004-2010 span, letting replay windows run into documented post-2010 gaps) — fixed in `tiers.py` and pinned with 3 regression tests, own commits. (2) `run_tier3`'s row-wise, stateless-between-offsets design (deliberate, built for Phase 4's feature-based models) under-scores internally-stateful baselines like Baseline D's own logic — worked around via a diagnostic-only sequential-state replay, not a source change. Full write-up: `docs/ASSUMPTIONS.md` A-013. Substantive finding: bare LightGBM (raw columns only) beats Baseline D on Tier 1 (0.5798 vs 0.6380) and Tier 2 (0.5801 vs 0.6381) and clears the naive_floor rung, but is correctly BLOCKED from promotion head-to-head against Baseline D by `harness.promote()`'s hard-staleness-bucket regression safeguard (regresses on k=5/6/7) — the safeguard's first real, non-synthetic catch, and the sharpest evidence yet that Project Phase 4's historical-signature features (A-008, A-010) are the priority.
+- [x] 2.12 Documentation closure pass (this section, `ARCHITECTURE.md` §20, ADR follow-ups) — `PROJECT_PLAN.md`/`ARCHITECTURE.md` §20 updated to reflect step 2.11's real results; `docs/ASSUMPTIONS.md` A-013 added (Tier 3 anchor-span bug + row-wise-scoring limitation); `experiment_log.csv`'s Tier 1/2/3 columns confirmed populated (not `N/A`) for EXP-008/EXP-009; ADR-0004/ADR-0005 follow-up checkboxes closed
 
 **Definition of Done:** running the harness against a trivial model produces all three tiers, the full
 decomposition table (including the ACF-quartile × staleness-bucket cross-cut), and the degradation slope
@@ -158,6 +158,19 @@ with the AR(1) reference overlay; Tier 3's naive-model score reproduces Baseline
 tolerance (validating the harness faithfully reproduces Phase 1's measured reality, per ADR-0004); the
 leakage tests pass; every scenario used is a named config file, not inline logic; we both agree the scheme
 can't leak the future and honestly reflects the real blackout structure. Full detail: `docs/PHASE2_EXECUTION_PLAN.md`.
+
+**STATUS: MET.** All 12 steps complete (above), all built against Phase 1's measured constants, not
+re-derived. `notebooks/03_validation_harness.ipynb` (step 2.11) is the phase-defining proof: run against
+real Train.csv (2,154,021 rows), Tier 3's naive-model score reproduces Baseline D's 0.6573 within tolerance
+(0.6319, diff 0.0254) once a genuine anchor-span bug is fixed (`tiers.py`, regression-tested) and
+`run_tier3`'s deliberate row-wise/stateless-between-offsets design is accounted for via a diagnostic
+sequential replay — full write-up `docs/ASSUMPTIONS.md` A-013. The leakage tests pass (step 2.8, 18 tests
+against both correct and deliberately-leaky toy examples). Every scenario used is a named
+`configs/validation/*.yaml` file, never inline logic (step 2.5). The harness's promotion safeguards are
+proven against real candidates, not just toy fixtures: bare LightGBM beats Baseline D in aggregate
+(Tier 1/2) but is correctly blocked from promotion by the hard-staleness-bucket regression check (k=5/6/7)
+— exactly the failure mode that safeguard exists to catch. Project Phase 2 is formally complete; Project
+Phase 3 (state-aware baselines) is next.
 
 ---
 
