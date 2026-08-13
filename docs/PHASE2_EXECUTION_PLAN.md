@@ -168,11 +168,11 @@ The simulator itself is **generic** — it doesn't know about "curve mode" or "r
 
 ## 2.12 — Documentation closure pass
 
-- [ ] `PROJECT_PLAN.md` Phase 2 section trimmed to a short summary + pointer to this document; checkboxes ticked as each step above completes.
-- [ ] `ARCHITECTURE.md` §20 status paragraph updated once Phase 2 code exists (currently states "no modeling code has been written yet").
-- [ ] `docs/ASSUMPTIONS.md` — no new assumption expected from this phase (it's an engineering phase, not an evidence-generating one), but any surprise encountered while building (e.g., a scenario config that doesn't reproduce Phase 1's numbers within tolerance) gets logged as a new entry, not silently patched away.
-- [ ] `reports/experiments/experiment_log.csv` — confirm the Tier 1/2/3 columns are populated for at least the two step-2.11 proof runs, not left `N/A`.
-- [ ] ADR-0004 and ADR-0005 follow-up-action checkboxes both closed out.
+- [x] `PROJECT_PLAN.md` Phase 2 section trimmed to a short summary + pointer to this document; checkboxes ticked as each step above completes. STATUS: MET note added summarizing step 2.11's real results.
+- [x] `ARCHITECTURE.md` §20 status paragraph updated once Phase 2 code exists (previously stated "no modeling code has been written yet") — now records Phase 2's formal closure and step 2.11's proof-run findings.
+- [x] `docs/ASSUMPTIONS.md` — a real surprise WAS encountered while building (contrary to this checklist's original expectation that Phase 2 wouldn't generate one): Tier 3's replay-anchor selection had a genuine bug, and separately its row-wise scoring design under-serves stateful baselines. Logged as new entry A-013, not silently patched away.
+- [x] `reports/experiments/experiment_log.csv` — confirmed: Tier 1/2/3 columns populated with real RMSEs (not `N/A`) for both step-2.11 proof runs, EXP-008 (Baseline D logic: 0.6380/0.6381/0.8270) and EXP-009 (bare LightGBM: 0.5798/0.5801/0.7669). Several duplicate rows from retries against a transiently-corrupted local `mlflow.db` were cleaned up first.
+- [x] ADR-0004 and ADR-0005 follow-up-action checkboxes both closed out.
 
 ---
 
