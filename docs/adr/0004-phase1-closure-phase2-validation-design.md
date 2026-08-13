@@ -131,5 +131,11 @@ new finding.
   marked MET)
 - [x] `PROJECT_PLAN.md` Project Phase 2 rewritten with the detailed, Phase-1-grounded execution plan this
   ADR's decisions require (see Phase 2 section)
-- [ ] `src/tws_forecast/validation/` module implementing the above — tracked as Phase 2 implementation
-  work, not part of this ADR itself
+- [x] `src/tws_forecast/validation/` module implementing the above — tracked as Phase 2 implementation
+  work, not part of this ADR itself. Complete as of Project Phase 2's close (2026-08-13): all of
+  `phase1_constants.py`, `splitters.py`, `masking_simulator.py`, `scenarios.py`, `tiers.py`,
+  `decomposition.py`, `leakage_tests.py`, `harness.py`, `experiment_log.py` built and proven against
+  real data in `notebooks/03_validation_harness.ipynb` (step 2.11) — Tier 3's naive-model score
+  reproduces this ADR's own 0.6573 validation criterion within tolerance. See `docs/ASSUMPTIONS.md`
+  A-013 for two real findings (a fixed anchor-span bug, and a documented row-wise-scoring limitation)
+  surfaced during that proof run.
