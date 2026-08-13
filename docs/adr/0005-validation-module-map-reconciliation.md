@@ -168,6 +168,7 @@ Phase 2 is complete.
 
 ## Follow-up actions
 
-- [ ] `docs/PHASE2_EXECUTION_PLAN.md` written against this ADR's module list
-- [ ] `PROJECT_PLAN.md` Phase 2 section trimmed to point to it
-- [ ] `ARCHITECTURE.md` §20 status note updated once Phase 2 implementation begins
+- [x] `docs/PHASE2_EXECUTION_PLAN.md` written against this ADR's module list
+- [x] `PROJECT_PLAN.md` Phase 2 section trimmed to point to it
+- [x] `ARCHITECTURE.md` §20 status note updated once Phase 2 implementation begins — updated again at
+  Phase 2's formal close (2026-08-13) to record step 2.11's proof-run results
