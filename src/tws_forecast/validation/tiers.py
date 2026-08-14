@@ -43,7 +43,10 @@ from tws_forecast.validation.splitters import (
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["Predictor", "TierResult", "run_tier1", "run_tier2", "run_tier3"]
+__all__ = [
+    "Predictor", "TierResult", "run_tier1", "run_tier2", "run_tier3",
+    "run_tier3_sequential_state",
+]
 
 
 class Predictor(Protocol):
@@ -366,6 +369,182 @@ def run_tier3(
     if not all_predictions:
         raise ValueError(
             "run_tier3 produced no predictions across any anchor — check df's "
+            "coverage of the calendar months the replay pattern needs."
+        )
+
+    predictions = pd.concat(all_predictions, ignore_index=True)
+    overall_rmse = _rmse(predictions["target"].values, predictions["prediction"].values)
+
+    return TierResult(
+        tier=3, scenario_name=scenario, predictions=predictions,
+        fold_rmses=tuple(fold_rmses), overall_rmse=overall_rmse,
+    )
+
+
+def run_tier3_sequential_state(
+    model: Predictor,
+    df: pd.DataFrame,
+    scenario: str = "test_regime_replay",
+    n_anchors: int = 3,
+    state_attr: str = "_last_known",
+) -> TierResult:
+    """Diagnostic-only sequential-state variant of :func:`run_tier3`, for
+    internally stateful, non-feature-based predictors (Project Phase 3's
+    ``LastKnownStatePredictor`` / ``HybridPersistencePredictor``) per A-013
+    (``docs/ASSUMPTIONS.md``).
+
+    ``run_tier3`` calls ``model.predict()`` independently for each of the
+    18 replay offsets, by design — it's built for Project Phase 4's future
+    feature-based models, which will read "what was last observed" from an
+    explicit row-level column, not from a predictor's own internal memory.
+    That design under-scores a genuinely stateful last-known-state
+    predictor: by the time the real replay pattern reaches, say, offset 11
+    (a BLACKOUT month), a real last-known-state forecaster should already
+    know about earlier FULL offsets within the *same* 41-month pattern —
+    but ``run_tier3`` never lets it see them, because offsets are scored in
+    the config's own (not necessarily chronological) list order and each
+    call is independent.
+
+    This function walks the same replay pattern in **true chronological**
+    offset order and, immediately after scoring each FULL (fully-observed)
+    offset, updates the model's own ``state_attr`` dict (default
+    ``"_last_known"``, matching both ``LastKnownStatePredictor`` and
+    ``HybridPersistencePredictor``'s own attribute name) with that offset's
+    real observed values — reproducing what a genuinely deployed
+    last-known-state forecaster would actually know by the time it reaches
+    a later BLACKOUT offset in the same window. First proven as an ad hoc
+    notebook cell in ``notebooks/03_validation_harness.ipynb`` §7b (Project
+    Phase 2 step 2.11); promoted here, tested, per the Project Phase 3
+    handoff §3.0's note that a second copy-paste of the same ~30 lines is
+    worth turning into a real function.
+
+    This directly reaches into a private attribute of ``model``
+    (``getattr(model, state_attr)``/``setattr``), which is exactly why this
+    stays a diagnostic-only helper rather than something every Phase 3+
+    candidate is scored with automatically — a real candidate is scored by
+    the standard, harness-faithful :func:`run_tier3` only. Raises
+    ``AttributeError`` immediately (rather than silently no-op-ing) if
+    ``model`` has no ``state_attr`` attribute, since a diagnostic that
+    quietly fails to do anything is worse than one that fails loudly.
+
+    Parameters
+    ----------
+    model, df, scenario, n_anchors:
+        Same meaning as :func:`run_tier3`.
+    state_attr:
+        Name of the ``{location_id: float}``-shaped dict attribute on
+        ``model`` that its own ``predict()`` consults for "last known
+        value." Both of this project's stateful baselines use
+        ``"_last_known"`` (the default); overridable for any future
+        stateful predictor using a different attribute name.
+
+    Returns
+    -------
+    TierResult
+        Same shape as :func:`run_tier3`'s return value, so it can be passed
+        to ``validation.decomposition.decompose`` identically — but this
+        result must never be used for promotion (``harness.promote()``
+        doesn't distinguish it from a real Tier 3 result by construction,
+        so callers are responsible for keeping it out of any
+        ``CandidateReport`` passed to ``promote()``).
+    """
+    config = load_scenario(scenario)
+    if config.scenario_type != "test_regime_replay":
+        raise ValueError(
+            f"run_tier3_sequential_state requires scenario_type='test_regime_replay', got "
+            f"{config.scenario_type!r} for scenario={scenario!r}"
+        )
+    if n_anchors < 1:
+        raise ValueError(f"n_anchors must be >= 1, got {n_anchors}")
+    if not hasattr(model, state_attr):
+        raise AttributeError(
+            f"run_tier3_sequential_state requires model to expose a "
+            f"{state_attr!r} attribute (a {{location_id: float}} dict its own "
+            "predict() consults) — got a model with no such attribute. This "
+            "diagnostic only applies to internally stateful, non-feature-"
+            "based predictors (see this function's docstring)."
+        )
+
+    df = df.copy()
+    df["time"] = pd.to_datetime(df["time"])
+
+    full_offsets = list(config.full_offsets)  # type: ignore[arg-type]
+    blackout_offsets = list(config.blackout_offsets)  # type: ignore[arg-type]
+    blackout_k_by_offset = config.blackout_k_by_offset  # type: ignore[assignment]
+    pattern_length = max(full_offsets + blackout_offsets) + 1
+
+    anchors = _select_replay_anchors(df, pattern_length, n_anchors)
+    if not anchors:
+        raise ValueError(
+            "Not enough historical data to fit even one Tier 3 replay anchor "
+            f"(need >= {pattern_length + 1} months of coverage in df)."
+        )
+
+    # True chronological order, unlike run_tier3's full-offsets-then-
+    # blackout-offsets grouping — this is the entire point of this function.
+    offsets_chronological = sorted(
+        [(o, None) for o in full_offsets] + [(o, blackout_k_by_offset[o]) for o in blackout_offsets],
+        key=lambda pair: pair[0],
+    )
+
+    fold_rmses: list[float] = []
+    all_predictions: list[pd.DataFrame] = []
+
+    for anchor_idx, anchor in enumerate(anchors):
+        train_data = df[df["time"] < anchor]
+        if len(train_data) == 0:
+            logger.warning(
+                "run_tier3_sequential_state anchor %s has no prior history, skipping", anchor.date()
+            )
+            continue
+        model.fit(train_data)
+
+        anchor_rows: list[pd.DataFrame] = []
+        for offset, k in offsets_chronological:
+            origin_time = anchor + pd.DateOffset(months=offset)
+            origin_rows = df[df["time"] == origin_time].copy()
+            if len(origin_rows) == 0:
+                continue
+
+            origin_rows = attach_forecast_origin_columns(origin_rows)
+            true_tws_t = origin_rows["TWS_t"].to_numpy(copy=True)
+            is_blackout = k is not None
+            if is_blackout:
+                origin_rows["TWS_t"] = np.nan
+            origin_rows["TWS_t_masked"] = origin_rows["TWS_t"].isna()
+            origin_rows["regime"] = np.where(origin_rows["TWS_t_masked"], "masked", "observed")
+            origin_rows["simulated_k"] = k if k is not None else np.nan
+            origin_rows["replay_offset"] = offset
+
+            preds = model.predict(origin_rows)
+
+            # The crux: after scoring a FULL offset, teach the model's own
+            # state dict about the real values it just saw, *before* any
+            # later (chronologically) BLACKOUT offset is scored.
+            if not is_blackout:
+                state_dict = getattr(model, state_attr)
+                for loc, val in zip(origin_rows["location_id"].to_numpy(), true_tws_t, strict=True):
+                    state_dict[loc] = float(val)
+
+            pred_df = origin_rows[[*FORECAST_ORIGIN_COLUMNS, "simulated_k", "replay_offset"]].copy()
+            pred_df["prediction"] = preds
+            pred_df["target"] = origin_rows["target"].values
+            pred_df["true_tws_t"] = true_tws_t
+            pred_df["fold"] = anchor_idx
+            anchor_rows.append(pred_df)
+
+        if not anchor_rows:
+            logger.warning("run_tier3_sequential_state anchor %s produced no rows, skipping", anchor.date())
+            continue
+
+        anchor_df = pd.concat(anchor_rows, ignore_index=True)
+        fold_rmse = _rmse(anchor_df["target"].values, anchor_df["prediction"].values)
+        fold_rmses.append(fold_rmse)
+        all_predictions.append(anchor_df)
+
+    if not all_predictions:
+        raise ValueError(
+            "run_tier3_sequential_state produced no predictions across any anchor — check df's "
             "coverage of the calendar months the replay pattern needs."
         )
 
