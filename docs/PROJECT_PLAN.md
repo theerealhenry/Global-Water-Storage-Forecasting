@@ -176,16 +176,67 @@ Phase 3 (state-aware baselines) is next.
 
 ## Project Phase 3 — State-aware baselines (the bar to beat)
 
-Four *distinct* baselines, not one baseline with a fallback bolted on — conflating them (as an earlier draft did, calling a persistence/climatology hybrid "naive persistence") obscures what's actually being measured:
+Full build plan: `docs/PHASE3_HANDOFF.md` (written 2026-08-13, at Project Phase 2's formal closure). Four
+*distinct* baselines, not one baseline with a fallback bolted on — conflating them (as an earlier draft did,
+calling a persistence/climatology hybrid "naive persistence") obscures what's actually being measured:
 
-- [ ] **Baseline A — Oracle persistence**: ŷ = TWS_t, computed only on rows where TWS_t exists. Answers: how hard is the unmasked problem?
-- [ ] **Baseline B — Last-observation-carried-forward**: ŷ = TWS at the most recently observed month, for masked rows. Answers: how far can we get from historical state reconstruction alone, with zero learned correction?
-- [ ] **Baseline C — Seasonal climatology**: independent fallback, per-location per-calendar-month mean (already measured: 0.817, weak).
-- [ ] **Baseline D — Hybrid**: if TWS_t available, use it; else use last-known. The realistic "no ML" reference point for the actual test structure.
-- [ ] Global mean and Ridge regression as further reference points
-- [ ] All logged with the full error-decomposition table (Project Phase 2)
+- [x] **Baseline A — Oracle persistence**: ŷ = TWS_t, computed only on rows where TWS_t exists. Answers: how hard is the unmasked problem? `OraclePersistencePredictor`, `src/tws_forecast/models/baselines.py`.
+- [x] **Baseline B — Last-observation-carried-forward**: ŷ = TWS at the most recently observed month, for masked rows. Answers: how far can we get from historical state reconstruction alone, with zero learned correction? `LastKnownStatePredictor` — explicitly verified (`tests/test_baselines.py`) to never read the predict-time frame's own `TWS_t`, even when populated, which is the precise distinction from Baseline D's own forward-fill logic (see that class's docstring).
+- [x] **Baseline C — Seasonal climatology**: independent fallback, per-location per-calendar-month mean (already measured: 0.817, weak). `SeasonalClimatologyPredictor`, keyed off the *target's* calendar month, matching Phase 1's original measurement precisely.
+- [x] **Baseline D — Hybrid**: if TWS_t available, use it; else use last-known. The realistic "no ML" reference point for the actual test structure. `HybridPersistencePredictor`, promoted near-verbatim from `notebooks/03_validation_harness.ipynb`'s throwaway `BaselineDPredictor`, per the handoff's explicit instruction not to reimplement this logic a second time.
+- [x] Global mean and Ridge regression as further reference points. `GlobalMeanPredictor`; `RidgeBaselinePredictor` (two internal Ridge models, one per observed/masked regime — see its docstring for why TWS_t isn't simply dropped).
+- [x] **A-013 handling (handoff step 3.0):** `validation.tiers.run_tier3_sequential_state` promoted from notebook 03 §7b into tested `src/` code (`tests/test_tiers_sequential_state.py`) — the diagnostic-only, chronologically-ordered replay that lets Baselines B/D's internal state accumulate across a Tier 3 replay window, giving a number genuinely comparable to Phase 1's own replay measurements (B=0.7145, D=0.6573), reported *alongside*, never in place of, the standard harness-faithful `run_tier3` score.
+- [x] All six candidates wired to run through `harness.evaluate_candidate()`/`promote()`/`log_candidate()` unmodified — `notebooks/04_baselines.ipynb`, executed end-to-end 2026-08-14 against the real 2,154,021-row `Train.csv` (13.2s load, 12.8s ACF computation over 15,715 locations, ~65-92s per candidate's Tier 1+2+3 evaluation).
+- [x] Notebook executed end-to-end against the real `Train.csv`, decomposition tables reviewed, all six candidates logged for real (**EXP-010 through EXP-015**, `reports/experiments/experiment_log.csv` and real MLflow runs in `mlflow.db`/`mlruns/`), documentation closure with the real numbers (this section, `ARCHITECTURE.md` §20, `docs/ASSUMPTIONS.md` A-014).
 
 **Definition of Done:** all four baselines decomposed by regime; we know the exact numbers every subsequent model must beat, per regime, not just on average.
+
+**STATUS: MET.** All six candidates evaluated through the full three-tier harness against the real data,
+decomposed by regime, logged for real. Headline numbers (Tier 2 overall RMSE — the tier `promote()`
+evaluates the ladder against):
+
+| Candidate | Tier 1 | Tier 2 | Tier 3 (standard) | Tier 3 (sequential-state) | Ladder rung | vs. Baseline D |
+|---|---|---|---|---|---|---|
+| Global mean | 0.8740 | 0.8740 | 0.8957 | n/a | none | regressed k=5/6/7 |
+| **Baseline A** — oracle persistence | 0.6380 | 0.6383 | 0.7961 | n/a | naive_floor | regressed k=5/6/7 |
+| **Baseline B** — last-known-state | 0.8532 | 0.8532 | 0.9369 | 0.7258 | none | regressed k=5 |
+| **Baseline C** — seasonal climatology | 1.0796 | 1.0796 | 0.9403 | n/a | none | regressed k=5/6/7 |
+| **Baseline D** — hybrid persistence | 0.6380 | **0.6381** | 0.8270 | **0.6319** | naive_floor | — (reference) |
+| Ridge (SPEI/soil-moisture, 2-regime) | 0.5878 | 0.5880 | 0.7342 | n/a | naive_floor | regressed k=5/7 |
+
+**Baseline D remains the undisputed realistic floor.** Its harness Tier 2 RMSE (0.6381) reproduces Phase 1's
+own replay measurement (0.6573) closely, and its A-013-correct sequential-state Tier 3 number (0.6319) lands
+even closer — both expected, cross-validating the harness against Phase 1 a second time (after Project
+Phase 2's own proof run) on genuinely new candidates. **Every other candidate that clears the naive-floor
+ladder rung in aggregate (Baseline A, Ridge) is still correctly blocked from promotion against Baseline D**
+by `harness.promote()`'s hard-staleness-bucket safeguard — Ridge in particular is a real learned model using
+SPEI/soil-moisture features and beats Baseline D by 0.05 RMSE in aggregate (0.588 vs. 0.638), yet regresses
+on k=5 and k=7. This is the *second* time this exact failure mode has been caught by the same mechanism
+(after bare LightGBM in Project Phase 2's proof run, EXP-009) — now demonstrated across two structurally
+different model families (tree-based and linear), which is stronger evidence the safeguard is catching a
+real property of this problem, not a LightGBM-specific quirk.
+
+**One genuine surprise, not anticipated by Phase 1's preview:** Baseline C (seasonal climatology) is the
+*worst* candidate evaluated — worse even than the global mean (Tier 2 1.0796 vs. 0.8740) — reversing
+Phase 1's in-sample measurement (0.817, `notebooks/01_eda.ipynb`), which never held out the data it was
+fit on. Naive per-`(location, calendar-month)` climatology overfits badly out-of-fold, because most of the
+~15,715 × 12 cells it estimates have very little data per fold. This is the first real, out-of-fold evidence
+(not just architectural reasoning) that Project Phase 4's planned shrinkage-regularized location signatures
+are necessary, not merely a stylistic preference — see `docs/ASSUMPTIONS.md` A-014.
+
+**A methodological limitation surfaced by this run, worth carrying into Project Phase 4/5's own reading of
+Tier 2 diagnostics:** the per-ACF-quartile degradation-slope curves (section 7 of the notebook, all six
+`degradation_slope_*.png` figures) are visibly jagged and non-monotonic for every one of the six candidates
+— because Tier 2's synthetic blackout-curve scenario only samples 16-40 rows per staleness bucket per fold
+set, split four ways by ACF quartile. All six candidates are scored against the *identical* masked rows
+(the blackout simulator's seed doesn't depend on the model), so the noise is shared, not candidate-specific
+— but it means individual quartile×k data points in this diagnostic are not statistically reliable at
+Project Phase 3's sample size. Tier 3's decomposition (46,700+ rows per staleness bucket) is far more
+stable and should be preferred for any claim that depends on a specific staleness bucket's exact value.
+
+Full decomposition tables, promotion-decision reasoning, and the closing synthesis are in
+`notebooks/04_baselines.ipynb` itself (executed, all outputs and figures saved) — including a detailed
+executive-summary section appended after this closure.
 
 ---
 
