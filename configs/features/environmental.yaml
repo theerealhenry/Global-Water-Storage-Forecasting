@@ -1,0 +1,28 @@
+# Environmental features -- features/environmental.py, Project Phase 4
+# step 4.6. SPEI differencing, drought-persistence run-length,
+# soil-moisture trajectory.
+
+name: environmental
+feature_type: environmental
+description: >
+  SPEI differencing across the available timescales (e.g. SPEI_03_t -
+  SPEI_03_t-3 style deltas), drought-persistence run-length (consecutive
+  months below drought_threshold, per location), and soil-moisture
+  trajectory (the same lag/trend treatment state.reconstruction gives TWS,
+  applied to SOIL_MOISTURE_t).
+source_rationale: >
+  docs/PHASE4_EXECUTION_PLAN.md Section 4.6; docs/PROJECT_PLAN.md "Key
+  findings" (SPEI_12 established as by far the strongest single covariate,
+  soil moisture a meaningful secondary one, Project Phase 1).
+
+# Lags (months) used for SPEI differencing features, applied to each of
+# the four available SPEI timescales (SPEI_01/03/06/12).
+spei_diff_lags: [3, 6, 12]
+
+# SPEI value at or below this threshold counts as "in drought" for the
+# drought-persistence run-length feature -- -1.5 is the standard SPEI
+# "moderate drought" cutoff in the wider SPEI literature, used here as a
+# starting default rather than a value re-derived from this project's own
+# data; revisit if step 4.9's feature-importance pass suggests a
+# project-specific threshold would do better.
+drought_threshold: -1.5

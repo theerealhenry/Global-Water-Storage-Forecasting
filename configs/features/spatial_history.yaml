@@ -1,0 +1,39 @@
+# Historical (S2) / signature (S3) spatial-neighbor features --
+# state/spatial_history.py, Project Phase 4 step 4.3. Deliberately
+# excludes any S1 (concurrent same-month neighbor) feature -- same-month
+# neighbors are almost always masked together during blackouts, per the
+# verified 0.981-correlation-but-unusable finding (docs/ARCHITECTURE.md
+# Section 9).
+
+name: spatial_history
+feature_type: spatial_history
+description: >
+  k-nearest-neighbor (by geographic distance) historical features:
+  neighbor_TWS_last_known, neighbor_TWS_lag_3/6, neighbor_historical_anomaly,
+  neighbor_trend, neighbor_seasonal_signature, neighbor_ACF -- every one S2
+  (historical) or S3 (signature), composing state.reconstruction (step 4.1)
+  and state.signatures (step 4.2) rather than recomputing last-known/signature
+  logic independently for neighbors.
+source_rationale: >
+  docs/PHASE4_EXECUTION_PLAN.md Section 4.3; docs/ARCHITECTURE.md Section 9
+  (S1-S4 spatial-feature taxonomy); the 0.981-correlation-but-unusable
+  finding ruling out S1 for the blackout regime that matters.
+
+# Number of nearest neighbors (by great-circle/haversine distance on
+# lat/lon) aggregated per location. No basin dataset is sourced as of
+# this phase -- geographic-distance neighbors only; basin-aware
+# aggregation is an explicitly conditional, documented extension point,
+# not built here.
+n_neighbors: 8
+
+# inverse_distance (default, standard spatial-statistics practice -- a
+# neighbor 50km away should not count identically to one 300km away) or
+# flat_mean. Step 4.9's proof notebook should sanity-check this choice,
+# not treat it as an unexamined default.
+distance_weighting: inverse_distance
+
+# A neighbor beyond this radius is not included even if it would
+# otherwise be among the n_neighbors nearest -- avoids a "nearest"
+# neighbor that is actually a different climate regime entirely on a
+# sparse or edge-of-grid location.
+max_neighbor_distance_km: 500.0

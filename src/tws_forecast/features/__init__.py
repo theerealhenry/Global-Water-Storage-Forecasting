@@ -1,1 +1,1 @@
-"""Features module."""
+"""Features module — Project Phase 4."""

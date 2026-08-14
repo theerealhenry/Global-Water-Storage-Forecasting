@@ -1,0 +1,26 @@
+# Seasonal/trend features -- features/temporal.py, Project Phase 4 step
+# 4.5. Trailing linear-trend slope per location, month x hemisphere
+# interaction.
+
+name: temporal
+feature_type: temporal
+description: >
+  Trailing linear-trend slope per location (rolling OLS slope,
+  origin-time-indexed -- a standalone feature column, distinct from but
+  reusing the same underlying computation as
+  state.reconstruction.StateSnapshot.local_trend) and a month x
+  hemisphere interaction feature, motivated by the grid's Northern-
+  Hemisphere skew and the risk that a single global seasonal signal
+  misrepresents the Southern Hemisphere's opposite phase.
+source_rationale: >
+  docs/PHASE4_EXECUTION_PLAN.md Section 4.5; docs/ASSUMPTIONS.md A-011
+  (test set omits October entirely; 2x row-share imbalance between
+  recurring and non-recurring calendar months -- any seasonal/calendar
+  feature here must be validated on under/zero-represented months
+  specifically); docs/ARCHITECTURE.md Section 7 (hemisphere skew).
+
+# Trailing windows (months) the rolling trend slope is computed over.
+# Kept in sync with signatures.yaml's trailing_windows and
+# state.reconstruction.build_state_snapshot's default so a "12-month
+# trend" means the same thing everywhere in this project.
+trend_window_months: [12, 24]
