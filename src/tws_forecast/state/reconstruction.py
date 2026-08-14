@@ -57,6 +57,9 @@ import pandas as pd
 __all__ = [
     "ForecastOrigin",
     "location_id_from_lat_lon",
+    "ensure_location_id",
+    "compute_acf_at_lags",
+    "month_diff",
     "StateSnapshot",
     "StateStatus",
     "DEFAULT_MAX_RECONSTRUCTION_GAP_MONTHS",
@@ -326,7 +329,7 @@ class StateSnapshot:
     state_status: StateStatus
 
 
-def _ensure_location_id(df: pd.DataFrame) -> pd.DataFrame:
+def ensure_location_id(df: pd.DataFrame) -> pd.DataFrame:
     """Attach ``location_id`` if not already present, without mutating the
     caller's frame. Deliberately independent of
     ``validation.splitters.attach_forecast_origin_columns`` (which itself
@@ -343,7 +346,7 @@ def _ensure_location_id(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def _month_diff(later: pd.Timestamp, earlier: pd.Timestamp) -> int:
+def month_diff(later: pd.Timestamp, earlier: pd.Timestamp) -> int:
     """Whole calendar months between two timestamps (``later - earlier``)."""
     return (later.year - earlier.year) * 12 + (later.month - earlier.month)
 
@@ -379,12 +382,12 @@ def _compute_local_trend(
     if len(windowed) < 2:
         return None
     windowed_times = pd.to_datetime(windowed["time"])
-    x = np.array([_month_diff(t, window_start) for t in windowed_times], dtype=float)
+    x = np.array([month_diff(t, window_start) for t in windowed_times], dtype=float)
     y = windowed["TWS_t"].to_numpy(dtype=float)
     return float(np.polyfit(x, y, 1)[0])
 
 
-def _compute_acf(observed: pd.DataFrame, lags: tuple[int, ...]) -> dict[int, float | None]:
+def compute_acf_at_lags(observed: pd.DataFrame, lags: tuple[int, ...]) -> dict[int, float | None]:
     if observed.empty:
         return dict.fromkeys(lags)
     periods = pd.PeriodIndex(pd.to_datetime(observed["time"]), freq="M")
@@ -441,7 +444,7 @@ def build_state_snapshot(
         docstring.
     """
     as_of_ts = pd.Timestamp(as_of)
-    frame = _ensure_location_id(df)
+    frame = ensure_location_id(df)
     times = pd.to_datetime(frame["time"])
     history = frame.loc[(frame["location_id"] == location_id) & (times <= as_of_ts)].sort_values(
         "time"
@@ -463,7 +466,7 @@ def build_state_snapshot(
         last_row = observed.iloc[-1]
         last_known_tws = float(last_row["TWS_t"])
         last_known_time = pd.Timestamp(last_row["time"])
-        months_since_observation = _month_diff(as_of_ts, last_known_time)
+        months_since_observation = month_diff(as_of_ts, last_known_time)
 
         previous_known_tws = float(observed.iloc[-2]["TWS_t"]) if len(observed) >= 2 else None
         second_previous_known_tws = (
@@ -489,7 +492,7 @@ def build_state_snapshot(
 
     local_trend = _compute_local_trend(observed, as_of_ts, window_months=max(trailing_windows))
     seasonal_position = ((as_of_ts.month - 1) % 12) / 12.0
-    acf_1_3_6_12 = _compute_acf(observed, lags=ACF_LAGS)
+    acf_1_3_6_12 = compute_acf_at_lags(observed, lags=ACF_LAGS)
     observation_density = {
         w: _compute_observation_density(history, as_of_ts, w) for w in trailing_windows
     }
@@ -700,7 +703,7 @@ def build_state_snapshots(
     representation of ``StateSnapshot.acf_1_3_6_12``/``observation_density``'s
     dict-valued fields).
     """
-    frame = _ensure_location_id(df).copy()
+    frame = ensure_location_id(df).copy()
     frame[as_of_column] = pd.to_datetime(frame[as_of_column])
 
     pieces = [
