@@ -24,3 +24,6 @@
 | [0001](0001-state-reconstruction-architecture.md) | Adopt state-reconstruction architecture over direct regression | Modeling | Accepted | 2026-08-09 |
 | [0002](0002-no-dvc-manifest-based-data-versioning.md) | No DVC — manifest-based data versioning | Data | Accepted | 2026-08-09 |
 | [0003](0003-dependency-management-strategy.md) | Conda-for-interpreter + pip-for-packages, pinned version set | Deployment | Accepted | 2026-08-10 |
+| [0004](0004-phase1-closure-phase2-validation-design.md) | Close Project Phase 1; bind Phase 2's validation harness to Phase 1's measured distributions | Validation | Accepted | 2026-08-11 |
+| [0005](0005-validation-module-map-reconciliation.md) | Reconcile Phase 2 module naming with `ARCHITECTURE.md`'s canonical map | Validation | Accepted | 2026-08-11 |
+| [0006](0006-statesnapshot-trajectory-fields.md) | Extend `StateSnapshot` with `second_previous_known_tws` and `state_acceleration` | Features | Accepted | 2026-08-14 |
