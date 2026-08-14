@@ -242,17 +242,22 @@ executive-summary section appended after this closure.
 
 ## Project Phase 4 — State reconstruction & feature engineering
 
-**Objective:** build the observation-state reconstruction layer as one coherent, explicit pipeline stage (see the central-hypothesis diagram above), not scattered ad hoc features — every downstream model consumes the same consistently-defined state representation.
+**Objective:** build the observation-state reconstruction layer as one coherent, explicit pipeline stage (see the central-hypothesis diagram above), not scattered ad hoc features — every downstream model consumes the same consistently-defined state representation. **Full step-by-step build plan moved to `docs/PHASE4_EXECUTION_PLAN.md`** (written 2026-08-14, at Project Phase 3's formal closure, following the same authoritative-single-source pattern established for Phase 2 by `docs/PHASE2_EXECUTION_PLAN.md`) — that document is now the authoritative source of truth for Phase 4's build order (steps 4.1–4.10), module map, `StateSnapshot` schema reconciliation (ADR-0006), and per-step deliverables/tests, so it isn't duplicated and independently maintained here. This section stays as a summary and status tracker only.
 
-- [ ] **State reconstruction layer**, precisely defined (these are four different things, not interchangeable): calendar lag (TWS at exactly t−k, itself often missing inside a blackout streak) vs. last-observed lag (TWS at the most recent *actually observed* month) vs. observation age (t − t_last_observed) vs. observation trajectory (last_known, previous_known, second_previous_known, from which state velocity and acceleration are derived) — plus observation_count/density over trailing 12/24 months.
-- [ ] **Historical location signature features, with explicit shrinkage** — mean, std, trend, seasonality amplitude, ACF(1/3/6/12), SPEI/soil-moisture response, computed out-of-fold. Shrunk toward the global estimate as θ̂_location = w·θ_location + (1−w)·θ_global, w increasing with the amount/quality of location-level evidence (empirical-Bayes style, e.g. w = n/(n+k)) — not naive per-location statistics, which overfit given only ~150 monthly observations per location.
-- [ ] **Historical spatial-history features — corrected from an earlier draft.** Not concurrent-month k-NN (same-month neighbors are almost always masked together during blackouts, per the verified 0.981-correlation-but-unusable finding). Instead: `neighbor_TWS_last_known`, `neighbor_TWS_lag_3/6`, `neighbor_historical_anomaly`, `neighbor_trend`, `neighbor_seasonal_signature`, `neighbor_ACF`. Basin-aware aggregation if a basin dataset is sourced.
-- [ ] Seasonal/trend features: trailing linear-trend slope per location, month × hemisphere interaction
-- [ ] SPEI differencing, drought-persistence run-length features, soil-moisture trajectory
-- [ ] Target transformation comparison in one controlled experiment: delta / anomaly / volatility-normalized delta / trend-residual
-- [ ] All transforms as testable, leakage-safe transformers (fit only on train fold)
+**Inherited from Phase 3 (what Phase 4 exists to fix):** Baseline D's realistic no-ML floor (Tier 2 0.6381, sequential-state Tier 3 0.6319) is unbeaten by any candidate that clears promotion — Ridge came closest in aggregate (0.588) but was correctly blocked twice over by the hard-staleness-bucket safeguard (k=5/6/7, then k=5/7). Baseline C's out-of-fold collapse (`docs/ASSUMPTIONS.md` A-014) is direct, real-data proof that naive per-location statistics overfit and that shrinkage-regularized signatures are necessary, not stylistic. Phase 4's job is to build the `StateSnapshot` representation and the S2/S3 historical-signature and spatial-history features that give Phase 5's GBM models something better than raw columns to work with — concurrent-month (S1) features remain explicitly out of scope (unusable during blackouts, per Phase 1's 0.981-correlation finding).
 
-**Definition of Done:** state-reconstruction pipeline runs end-to-end inside CV folds with no leakage (verified: shuffling future data must not change past predictions); feature-importance pass shows sensible results, decomposed by regime.
+- [ ] **State reconstruction layer** (`StateSnapshot`, step 4.1) — calendar lag vs. last-observed lag vs. observation age vs. observation trajectory (velocity/acceleration), plus observation density and blackout-streak length. ADR-0006 reconciles the `ARCHITECTURE.md`/`PROJECT_PLAN.md` field lists.
+- [ ] **Historical location signatures with explicit shrinkage** (step 4.2) — mean, std, trend, seasonality amplitude, ACF(1/3/6/12), SPEI/soil-moisture response, shrunk via θ̂ = w·θ_location + (1−w)·θ_global, w = n/(n+k). Includes a direct A-014 regression test.
+- [ ] **Historical spatial-history features** (step 4.3) — k-NN by geographic distance, S2/S3 only (`neighbor_TWS_last_known`, `neighbor_TWS_lag_3/6`, `neighbor_historical_anomaly`, `neighbor_trend`, `neighbor_seasonal_signature`, `neighbor_ACF`); mechanically guarded against any S1 feature.
+- [ ] **`Transformer` protocol + config-driven feature registry** (step 4.4).
+- [ ] **Temporal features** (step 4.5) — trailing trend slope, month×hemisphere interaction, explicit A-011 (October gap) test.
+- [ ] **Environmental features** (step 4.6) — SPEI differencing, drought-persistence run-length, soil-moisture trajectory.
+- [ ] **Target transformation comparison** (step 4.7) — level/delta/anomaly/trend-residual/volatility-normalized delta, each with round-trip-invertible `forward`/`inverse`.
+- [ ] **Real leakage tests against every new module** (step 4.8).
+- [ ] **Feature-assembly pipeline + proof notebook** (`notebooks/05_state_features.ipynb`, step 4.9) — leakage proof, target-transform head-to-head, A-014 direct confirmation, regime-decomposed feature-importance pass (diagnostic only — not a Phase 5 promotion decision).
+- [ ] **Documentation closure** (step 4.10).
+
+**Definition of Done:** state-reconstruction pipeline runs end-to-end inside CV folds with no leakage (verified: shuffling future data must not change past predictions); feature-importance pass shows sensible results, decomposed by regime. Full detail: `docs/PHASE4_EXECUTION_PLAN.md`.
 
 ---
 
