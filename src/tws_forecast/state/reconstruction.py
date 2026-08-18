@@ -60,6 +60,7 @@ __all__ = [
     "ensure_location_id",
     "compute_acf_at_lags",
     "month_diff",
+    "rolling_slope_raw",
     "StateSnapshot",
     "StateStatus",
     "DEFAULT_MAX_RECONSTRUCTION_GAP_MONTHS",
@@ -525,7 +526,7 @@ def build_state_snapshot(
     )
 
 
-def _rolling_slope(values: np.ndarray) -> float:
+def rolling_slope_raw(values: np.ndarray) -> float:
     """OLS slope of the non-NaN points in ``values`` against their integer
     position — used as a ``Series.rolling(...).apply(raw=True)`` callback,
     which is why NaN-dropping happens inside this function rather than via
@@ -604,7 +605,7 @@ def _build_snapshots_for_location(
 
     window_trend = max(trailing_windows)
     local_trend = (
-        s.rolling(window=window_trend, min_periods=1).apply(_rolling_slope, raw=True).values
+        s.rolling(window=window_trend, min_periods=1).apply(rolling_slope_raw, raw=True).values
     )
 
     acf_by_lag: dict[int, np.ndarray] = {}
