@@ -115,7 +115,9 @@ def future_row_shuffle_test(
 
     ok = _values_close(baseline_preds, shuffled_preds)
     if not ok:
-        logger.warning("future_row_shuffle_test: FAILED — predictions changed after shuffling future rows")
+        logger.warning(
+            "future_row_shuffle_test: FAILED — predictions changed after shuffling future rows"
+        )
     return ok
 
 
@@ -150,7 +152,8 @@ def historical_only_check(
     if not ok:
         logger.warning(
             "historical_only_check: FAILED — %r depends on rows at/after evaluate_time=%s",
-            getattr(signature_fn, "__name__", signature_fn), evaluate_time,
+            getattr(signature_fn, "__name__", signature_fn),
+            evaluate_time,
         )
     return ok
 
@@ -160,16 +163,38 @@ def rolling_window_cutoff_check(
     df: pd.DataFrame,
     origin_time: pd.Timestamp | str,
     seed: int = RANDOM_SEED,
+    perturb_column: str = "TWS_t",
+    include_origin_row: bool = False,
 ) -> bool:
     """Confirms ``feature_fn(df, t)`` — a rolling/lag-style feature — never
-    reflects any row with ``time >= origin_time``.
+    reflects any row with ``time >= origin_time`` (the default, and Phase
+    2's original behavior), or, when ``include_origin_row=True``, never
+    reflects any row with ``time > origin_time``.
 
     Computes the feature once normally, then again after replacing
-    ``TWS_t`` with an enormous, unmistakable perturbation for every row at
-    or after ``origin_time`` — a feature that genuinely stops at the
-    information cutoff is numerically unaffected; a feature with an
-    off-by-one boundary error (``<=`` where it should be ``<``, a realistic
-    and easy mistake) picks up the perturbation and is caught.
+    ``perturb_column`` (``TWS_t`` by default; Project Phase 4 step 4.8 also
+    passes ``SPEI_XX_t``/``SOIL_MOISTURE_t`` to check
+    ``features/environmental.py``) with an enormous, unmistakable
+    perturbation for every row in the future window — a feature that
+    genuinely stops at the information cutoff is numerically unaffected; a
+    feature with an off-by-one boundary error picks up the perturbation and
+    is caught.
+
+    ``include_origin_row`` exists because Project Phase 4 established two
+    equally-legitimate, deliberately different origin-boundary conventions
+    (``docs/ARCHITECTURE.md`` §4): ``StateSnapshot`` and everything built on
+    it (``features/temporal.py``, ``features/environmental.py``, and the S2
+    columns of ``state/spatial_history.py``) use ``time <= as_of`` — the
+    origin row's own value counts as "what we know now" when it happens to
+    be observed — while ``LocationSignature`` and its S3-tagged consumers
+    use the strictly-earlier ``time < as_of`` to avoid circularity as an
+    anomaly baseline. ``include_origin_row=True`` narrows the perturbed
+    ("future") window to ``time > origin_time``, leaving the origin row's
+    own content untouched, so this check is meaningful for the inclusive
+    family too — a leak from strictly *after* ``origin_time`` is never
+    legitimate under either convention, unlike a dependency on the origin
+    row's own value, which the exclusive default (``include_origin_row=
+    False``) would otherwise, incorrectly, also flag.
     """
     set_seed(seed)
     df = df.copy()
@@ -179,19 +204,27 @@ def rolling_window_cutoff_check(
     baseline = feature_fn(df, origin_time)
 
     perturbed = df.copy()
-    future_mask = perturbed["time"] >= origin_time
-    if future_mask.any() and "TWS_t" in perturbed.columns:
+    future_mask = (
+        perturbed["time"] > origin_time if include_origin_row else perturbed["time"] >= origin_time
+    )
+    if future_mask.any() and perturb_column in perturbed.columns:
         rng = np.random.default_rng(seed)
         noise = rng.normal(loc=0.0, scale=1e6, size=int(future_mask.sum()))
-        perturbed.loc[future_mask, "TWS_t"] = perturbed.loc[future_mask, "TWS_t"].fillna(0.0).to_numpy() + noise
+        perturbed.loc[future_mask, perturb_column] = (
+            perturbed.loc[future_mask, perturb_column].fillna(0.0).to_numpy() + noise
+        )
 
     perturbed_result = feature_fn(perturbed, origin_time)
 
     ok = _values_close(baseline, perturbed_result)
     if not ok:
         logger.warning(
-            "rolling_window_cutoff_check: FAILED — %r reflects data at/after origin_time=%s",
-            getattr(feature_fn, "__name__", feature_fn), origin_time,
+            "rolling_window_cutoff_check: FAILED — %r reflects data at/after origin_time=%s "
+            "(perturb_column=%r, include_origin_row=%s)",
+            getattr(feature_fn, "__name__", feature_fn),
+            origin_time,
+            perturb_column,
+            include_origin_row,
         )
     return ok
 
@@ -219,7 +252,9 @@ def masking_simulator_no_leak_check(
     masked = apply_masking(df, scenario, seed=seed, derived_columns=derived_columns)
     masked_rows = masked[masked["TWS_t_masked"]]
     if len(masked_rows) == 0:
-        logger.info("masking_simulator_no_leak_check: scenario masked 0 rows on this df — nothing to check")
+        logger.info(
+            "masking_simulator_no_leak_check: scenario masked 0 rows on this df — nothing to check"
+        )
         return True
 
     if masked_rows["TWS_t"].notna().any():
@@ -229,7 +264,8 @@ def masking_simulator_no_leak_check(
     for col in derived_columns or []:
         if col in masked_rows.columns and masked_rows[col].notna().any():
             logger.warning(
-                "masking_simulator_no_leak_check: FAILED — derived column %r left populated on a masked row", col
+                "masking_simulator_no_leak_check: FAILED — derived column %r left populated on a masked row",
+                col,
             )
             return False
 
@@ -240,7 +276,8 @@ def masking_simulator_no_leak_check(
             continue
         if (masked_rows[col].to_numpy() == true_tws.to_numpy()).any():
             logger.warning(
-                "masking_simulator_no_leak_check: FAILED — column %r reproduces the true masked TWS_t value", col
+                "masking_simulator_no_leak_check: FAILED — column %r reproduces the true masked TWS_t value",
+                col,
             )
             return False
 
