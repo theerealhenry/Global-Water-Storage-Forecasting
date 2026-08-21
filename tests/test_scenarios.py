@@ -30,18 +30,37 @@ from tws_forecast.validation.scenarios import (
 )
 from tws_forecast.validation.splitters import expanding_window_splits
 
-
 # --- real registered scenarios ---------------------------------------------
 
 
-def test_all_four_expected_scenarios_are_registered() -> None:
+def test_all_six_expected_scenarios_are_registered() -> None:
+    # "_quick" variants (added after Project Phase 4 step 4.9's first proof
+    # run found the full-rigor scenarios an intractable per-candidate cost
+    # for notebooks/05_state_features.ipynb's exploratory/comparative
+    # sections -- see configs/validation/expanding_window_quick.yaml and
+    # blackout_curve_quick.yaml's own docstrings) are cheap, same-shape
+    # siblings of expanding_window/blackout_curve, never used for a report
+    # a promote() call is actually based on.
     assert set(list_scenarios()) == {
-        "expanding_window", "blackout_curve", "test_regime_replay", "2015_like",
+        "expanding_window",
+        "expanding_window_quick",
+        "blackout_curve",
+        "blackout_curve_quick",
+        "test_regime_replay",
+        "2015_like",
     }
 
 
 @pytest.mark.parametrize(
-    "name", ["expanding_window", "blackout_curve", "test_regime_replay", "2015_like"]
+    "name",
+    [
+        "expanding_window",
+        "expanding_window_quick",
+        "blackout_curve",
+        "blackout_curve_quick",
+        "test_regime_replay",
+        "2015_like",
+    ],
 )
 def test_every_registered_scenario_loads_and_validates(name: str) -> None:
     config = load_scenario(name)
@@ -75,9 +94,7 @@ def test_2015_like_scenario_isolates_exactly_2015_jan_to_aug(golden_dir: Path) -
 
     config = load_scenario("2015_like")
     train = load_train(data_dir=golden_dir)
-    (train_fold, val_fold), = list(
-        expanding_window_splits(train, **config.splitter.model_dump())
-    )
+    ((train_fold, val_fold),) = list(expanding_window_splits(train, **config.splitter.model_dump()))
     assert train_fold["time"].max() == pd.Timestamp("2014-12-01")
     assert val_fold["time"].min() == pd.Timestamp("2015-01-01")
     assert val_fold["time"].max() == pd.Timestamp("2015-08-01")
@@ -151,20 +168,16 @@ def test_scenario_config_is_frozen() -> None:
         config.tier = 2  # type: ignore[misc]
 
 
-def test_load_scenario_name_mismatch_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_load_scenario_name_mismatch_raises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     import tws_forecast.validation.scenarios as scenarios_module
 
     bad_dir = tmp_path / "validation"
     bad_dir.mkdir()
     bad_file = bad_dir / "actual_filename.yaml"
-    bad_file.write_text(
-        yaml.dump(
-            _base_kwargs(name="declared_name_does_not_match")
-        )
-    )
+    bad_file.write_text(yaml.dump(_base_kwargs(name="declared_name_does_not_match")))
     monkeypatch.setattr(scenarios_module, "SCENARIO_DIR", bad_dir)
-    monkeypatch.setattr(
-        scenarios_module, "SCENARIO_REGISTRY", {"actual_filename": bad_file}
-    )
+    monkeypatch.setattr(scenarios_module, "SCENARIO_REGISTRY", {"actual_filename": bad_file})
     with pytest.raises(ValueError, match="does not match its filename stem"):
         scenarios_module.load_scenario("actual_filename")

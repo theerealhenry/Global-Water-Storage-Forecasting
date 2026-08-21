@@ -63,7 +63,26 @@ class TrailingTrendTransformer:
     def fit(self, train_df: pd.DataFrame) -> None:
         self._train_df = train_df.copy()
 
-    def transform(self, df: pd.DataFrame) -> pd.DataFrame:
+    def transform(
+        self, df: pd.DataFrame, precomputed_state_panels: dict[int, pd.DataFrame] | None = None
+    ) -> pd.DataFrame:
+        """Compute ``trend_slope_{window}`` for every configured window.
+
+        ``precomputed_state_panels`` is an optional performance escape
+        hatch: ``{window: panel}`` where ``panel`` is already
+        ``build_state_snapshots(combined, as_of_column="time",
+        trailing_windows=(window,))``'s own output for this call's
+        ``train_df ∪ df`` -- lets a composing caller
+        (``features.assemble.build_feature_matrix``) skip a redundant call
+        for whichever window it already had to compute anyway (Project
+        Phase 4 step 4.9's proof run found this a real, multi-minute-
+        per-call cost at ~15,715-location scale, paid once per window,
+        every ``fit``/``predict`` cycle). Any window *not* present in this
+        dict is computed exactly as before. Omitting the parameter entirely
+        (the default) reproduces the original, fully-self-contained
+        behavior -- every existing caller, including every test in
+        ``tests/test_temporal_features.py``, is unaffected.
+        """
         if self._train_df is None:
             raise RuntimeError("TrailingTrendTransformer.transform called before fit()")
 
@@ -74,15 +93,26 @@ class TrailingTrendTransformer:
         # identical fix for why index-based deduplication is unsafe.
         combined = combined.loc[~combined.duplicated(subset=["location_id", "time"], keep="last")]
 
+        precomputed_state_panels = precomputed_state_panels or {}
+
         result = pd.DataFrame(index=df.index)
         for window in self._trend_window_months:
-            # build_state_snapshots returns a frame indexed identically to
-            # its input (`combined`, whose index is the preserved union of
-            # train_df's and df's own original indices) -- no re-indexing
-            # needed before selecting df's own rows back out.
-            snapshots = build_state_snapshots(
-                combined, as_of_column="time", trailing_windows=(window,)
-            )
+            snapshots = precomputed_state_panels.get(window)
+            if snapshots is not None:
+                if len(snapshots) != len(combined) or set(snapshots.index) != set(combined.index):
+                    raise ValueError(
+                        f"TrailingTrendTransformer.transform: precomputed_state_panels[{window}] "
+                        "does not cover this call's own train_df ∪ df -- it was not built over "
+                        "the same combined frame this call constructs."
+                    )
+            else:
+                # build_state_snapshots returns a frame indexed identically to
+                # its input (`combined`, whose index is the preserved union of
+                # train_df's and df's own original indices) -- no re-indexing
+                # needed before selecting df's own rows back out.
+                snapshots = build_state_snapshots(
+                    combined, as_of_column="time", trailing_windows=(window,)
+                )
             result[f"trend_slope_{window}"] = snapshots.loc[df.index, "local_trend"]
 
         return result

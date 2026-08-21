@@ -10,6 +10,7 @@ import pytest
 
 from tws_forecast.features.base import Transformer
 from tws_forecast.features.temporal import MonthHemisphereTransformer, TrailingTrendTransformer
+from tws_forecast.state.reconstruction import build_state_snapshots, ensure_location_id
 
 
 def _location_frame(
@@ -186,3 +187,53 @@ def test_month_hemisphere_output_bounded() -> None:
     result = transformer.transform(df)
     assert (result["month_hemisphere_sin"].abs() <= 1.0 + 1e-9).all()
     assert (result["month_hemisphere_cos"].abs() <= 1.0 + 1e-9).all()
+
+
+# --- Precomputed state-panel injection (performance escape hatch, added ------
+# --- after Project Phase 4 step 4.9's first proof run found this -------------
+# --- Transformer's own per-window build_state_snapshots calls redundant with-
+# --- an identical caller-side call, e.g. features.assemble.build_feature_matrix)
+
+
+def test_precomputed_state_panel_gives_identical_result_to_recomputing_internally() -> None:
+    n_months = 30
+    values = [1.0 + 0.05 * i for i in range(n_months)]
+    df = _location_frame(0.5, 0.5, n_months, values)
+    train_df = df.iloc[:24]
+    query_row = df.iloc[[23]]
+
+    transformer_default = TrailingTrendTransformer(trend_window_months=(12, 24))
+    transformer_default.fit(train_df)
+    result_default = transformer_default.transform(query_row)
+
+    combined = pd.concat([train_df, query_row], ignore_index=False)
+    combined = ensure_location_id(combined)
+    combined = combined.loc[~combined.duplicated(subset=["location_id", "time"], keep="last")]
+    state_panel_24 = build_state_snapshots(combined, as_of_column="time", trailing_windows=(24,))
+
+    transformer_injected = TrailingTrendTransformer(trend_window_months=(12, 24))
+    transformer_injected.fit(train_df)
+    # Only window 24's panel is supplied -- window 12 must still be computed
+    # internally, exactly as it would be without any injection at all.
+    result_injected = transformer_injected.transform(
+        query_row, precomputed_state_panels={24: state_panel_24}
+    )
+
+    pd.testing.assert_frame_equal(result_default, result_injected)
+
+
+def test_precomputed_state_panel_covering_a_different_frame_raises() -> None:
+    n_months = 30
+    values = [1.0 + 0.05 * i for i in range(n_months)]
+    df = _location_frame(0.5, 0.5, n_months, values)
+    train_df = df.iloc[:24]
+    query_row = df.iloc[[23]]
+
+    wrong_panel = build_state_snapshots(
+        _location_frame(9.0, 9.0, 3, [1.0, 2.0, 3.0]), trailing_windows=(24,)
+    )
+
+    transformer = TrailingTrendTransformer(trend_window_months=(24,))
+    transformer.fit(train_df)
+    with pytest.raises(ValueError, match="does not cover"):
+        transformer.transform(query_row, precomputed_state_panels={24: wrong_panel})

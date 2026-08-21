@@ -9,6 +9,8 @@ import pandas as pd
 import pytest
 
 from tws_forecast.features.base import Transformer
+from tws_forecast.state.reconstruction import build_state_snapshots, ensure_location_id
+from tws_forecast.state.signatures import compute_location_signatures
 from tws_forecast.state.spatial_history import (
     SPATIAL_FEATURE_TAXONOMY,
     SpatialHistoryTransformer,
@@ -221,3 +223,48 @@ def test_result_indexed_like_input_and_has_no_unexpected_nans() -> None:
 
     assert list(result.index) == list(val_df.index)
     assert not result.isna().any().any()
+
+
+# --- Precomputed state_panel/signature_panel injection (performance escape --
+# --- hatch, added after Project Phase 4 step 4.9's first proof run found ----
+# --- this Transformer's own internal recomputation redundant with an -------
+# --- identical caller-side call, e.g. features.assemble.build_feature_matrix)
+
+
+def test_precomputed_panels_give_identical_result_to_recomputing_internally() -> None:
+    df = _grid_fixture(n_months=18)
+    train_df = df[pd.to_datetime(df["time"]) < pd.Timestamp("2004-01-01")]
+    val_df = df[pd.to_datetime(df["time"]) >= pd.Timestamp("2004-01-01")]
+
+    transformer_default = SpatialHistoryTransformer(n_neighbors=4, max_neighbor_distance_km=1000.0)
+    transformer_default.fit(train_df)
+    result_default = transformer_default.transform(val_df)
+
+    combined = pd.concat([train_df, val_df], ignore_index=False)
+    combined = ensure_location_id(combined)
+    combined = combined.loc[~combined.duplicated(subset=["location_id", "time"], keep="last")]
+    state_panel = build_state_snapshots(combined, as_of_column="time")
+    signature_panel = compute_location_signatures(combined, as_of_column="time")
+
+    transformer_injected = SpatialHistoryTransformer(n_neighbors=4, max_neighbor_distance_km=1000.0)
+    transformer_injected.fit(train_df)
+    result_injected = transformer_injected.transform(
+        val_df, state_panel=state_panel, signature_panel=signature_panel
+    )
+
+    pd.testing.assert_frame_equal(result_default, result_injected)
+
+
+def test_precomputed_panel_covering_a_different_frame_raises() -> None:
+    df = _grid_fixture(n_months=18)
+    train_df = df[pd.to_datetime(df["time"]) < pd.Timestamp("2004-01-01")]
+    val_df = df[pd.to_datetime(df["time"]) >= pd.Timestamp("2004-01-01")]
+
+    # A state_panel built over an unrelated, much smaller frame -- wrong
+    # row count, must be caught rather than silently mis-joined.
+    wrong_panel = build_state_snapshots(_location_frame(9.0, 9.0, 3, [1.0, 2.0, 3.0]))
+
+    transformer = SpatialHistoryTransformer(n_neighbors=4, max_neighbor_distance_km=1000.0)
+    transformer.fit(train_df)
+    with pytest.raises(ValueError, match="does not cover"):
+        transformer.transform(val_df, state_panel=wrong_panel)

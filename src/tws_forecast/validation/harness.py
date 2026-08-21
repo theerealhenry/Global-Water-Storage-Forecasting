@@ -75,6 +75,8 @@ def evaluate_candidate(
     acf_lookup: pd.Series | None = None,
     include_tier3: bool = True,
     n_anchors: int = 3,
+    tier1_scenario: str = "expanding_window",
+    tier2_scenario: str = "blackout_curve",
 ) -> CandidateReport:
     """Run a candidate through Tier 1 + Tier 2 (+ Tier 3 diagnostically),
     building the full decomposition table and degradation slope for each.
@@ -99,9 +101,23 @@ def evaluate_candidate(
         never needs Tier 3 to be present.
     n_anchors:
         Forwarded to ``run_tier3``.
+    tier1_scenario, tier2_scenario:
+        The named ``configs/validation/*.yaml`` scenario each tier loads —
+        default to the standard, full-rigor ``"expanding_window"``/
+        ``"blackout_curve"`` scenarios every promotion decision is made
+        against. Override to a cheaper scenario (fewer folds/windows, e.g.
+        a project-defined ``"expanding_window_quick"``) for exploratory or
+        comparative runs where full-rigor CV isn't the point — Project
+        Phase 4 step 4.9's target-transformation comparison
+        (``notebooks/05_state_features.ipynb``) is the first caller to do
+        this, since it repeats the whole harness once per candidate
+        target-transform and a full-cost fold count made an early proof
+        run impractically slow at real ~15,715-location, ~2.15M-row scale.
+        Never override for a report a `promote()` call will actually be
+        based on.
     """
-    tier1 = run_tier1(model, df)
-    tier2 = run_tier2(model, df)
+    tier1 = run_tier1(model, df, scenario=tier1_scenario)
+    tier2 = run_tier2(model, df, scenario=tier2_scenario)
     tier3 = run_tier3(model, df, n_anchors=n_anchors) if include_tier3 else None
 
     tier1_decomposition = decompose(tier1, acf_lookup=acf_lookup)
@@ -121,13 +137,17 @@ def evaluate_candidate(
 
     logger.info(
         "evaluate_candidate(%r): tier1_rmse=%.4f tier2_rmse=%.4f tier3_rmse=%s",
-        candidate_id, tier1.overall_rmse, tier2.overall_rmse,
+        candidate_id,
+        tier1.overall_rmse,
+        tier2.overall_rmse,
         f"{tier3.overall_rmse:.4f}" if tier3 is not None else "n/a",
     )
 
     return CandidateReport(
         candidate_id=candidate_id,
-        tier1=tier1, tier2=tier2, tier3=tier3,
+        tier1=tier1,
+        tier2=tier2,
+        tier3=tier3,
         tier1_decomposition=tier1_decomposition,
         tier2_decomposition=tier2_decomposition,
         tier3_decomposition=tier3_decomposition,
@@ -202,8 +222,11 @@ def promote(
         )
         logger.info("promote(%r): NOT promoted — %s", report.candidate_id, reason)
         return PromotionDecision(
-            candidate_id=report.candidate_id, promoted=False, rung=None,
-            reason=reason, regressed_buckets=tuple(sorted(regressed)),
+            candidate_id=report.candidate_id,
+            promoted=False,
+            rung=None,
+            reason=reason,
+            regressed_buckets=tuple(sorted(regressed)),
         )
 
     overall_rmse = report.tier2.overall_rmse
@@ -223,6 +246,9 @@ def promote(
     logger.info("promote(%r): promoted=%s — %s", report.candidate_id, rung is not None, reason)
 
     return PromotionDecision(
-        candidate_id=report.candidate_id, promoted=rung is not None, rung=rung,
-        reason=reason, regressed_buckets=(),
+        candidate_id=report.candidate_id,
+        promoted=rung is not None,
+        rung=rung,
+        reason=reason,
+        regressed_buckets=(),
     )

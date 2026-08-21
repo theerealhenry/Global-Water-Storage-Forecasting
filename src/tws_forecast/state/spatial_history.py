@@ -188,7 +188,35 @@ class SpatialHistoryTransformer:
             self._max_neighbor_distance_km,
         )
 
-    def transform(self, df: pd.DataFrame) -> pd.DataFrame:
+    def transform(
+        self,
+        df: pd.DataFrame,
+        state_panel: pd.DataFrame | None = None,
+        signature_panel: pd.DataFrame | None = None,
+    ) -> pd.DataFrame:
+        """Compose this location's neighbors' state/signature into
+        ``SPATIAL_FEATURE_TAXONOMY``'s columns for every row of ``df``.
+
+        ``state_panel``/``signature_panel`` are an optional performance
+        escape hatch (Project Phase 4 step 4.9's proof run found this
+        Transformer's *own* internal ``build_state_snapshots``/
+        ``compute_location_signatures`` calls redundant with identical calls
+        a composing caller — ``features.assemble.build_feature_matrix`` —
+        already has to make anyway, at real ~15,715-location scale a real,
+        multi-minute-per-call cost not worth paying twice). When given, they
+        must already be ``build_state_snapshots(combined, as_of_column=
+        "time")``/``compute_location_signatures(combined, as_of_column=
+        "time", shrinkage_k=self._shrinkage_k)``'s own output, where
+        ``combined`` is exactly this call's own ``train_df ∪ df`` (content-
+        deduplicated by ``(location_id, time)``, matching this method's own
+        construction below) -- **not validated beyond an index-coverage
+        assertion**, so a caller passing a panel built over a different
+        frame gets silently wrong neighbor lookups, not an error. When
+        omitted (the default), both are computed exactly as before -- this
+        parameter changes performance only, never default behavior, and
+        every existing caller (including every test in
+        ``tests/test_spatial_history.py``) is unaffected.
+        """
         if self._train_df is None or self._neighbor_edges is None:
             raise RuntimeError("SpatialHistoryTransformer.transform called before fit()")
 
@@ -208,8 +236,18 @@ class SpatialHistoryTransformer:
         # Every neighbor's own state/signature, at every period any row in
         # this frame might need -- computed once over the whole panel, via
         # the already-vectorized step 4.1/4.2 machinery, never recomputed
-        # per neighbor lookup.
-        state_panel = build_state_snapshots(combined, as_of_column="time")
+        # per neighbor lookup. Reused from the caller when supplied (see
+        # this method's own docstring); computed fresh otherwise.
+        if state_panel is None:
+            state_panel = build_state_snapshots(combined, as_of_column="time")
+        else:
+            if len(state_panel) != len(combined) or set(state_panel.index) != set(combined.index):
+                raise ValueError(
+                    "SpatialHistoryTransformer.transform: supplied state_panel does not "
+                    "cover this call's own train_df ∪ df -- it was not built over the same "
+                    "combined frame this call constructs."
+                )
+            state_panel = state_panel.copy()
         state_panel["period"] = pd.PeriodIndex(state_panel["as_of"], freq="M")
         state_lookup = state_panel[["location_id", "period", "last_known_tws"]].rename(
             columns={
@@ -218,9 +256,20 @@ class SpatialHistoryTransformer:
             }
         )
 
-        signature_panel = compute_location_signatures(
-            combined, as_of_column="time", shrinkage_k=self._shrinkage_k
-        )
+        if signature_panel is None:
+            signature_panel = compute_location_signatures(
+                combined, as_of_column="time", shrinkage_k=self._shrinkage_k
+            )
+        else:
+            if len(signature_panel) != len(combined) or set(signature_panel.index) != set(
+                combined.index
+            ):
+                raise ValueError(
+                    "SpatialHistoryTransformer.transform: supplied signature_panel does not "
+                    "cover this call's own train_df ∪ df -- it was not built over the same "
+                    "combined frame this call constructs."
+                )
+            signature_panel = signature_panel.copy()
         signature_panel["period"] = pd.PeriodIndex(signature_panel["as_of"], freq="M")
         signature_lookup = signature_panel[
             ["location_id", "period", "mean", "trend", "seasonality_amplitude", "acf_1"]
