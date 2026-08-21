@@ -1,0 +1,37 @@
+# Tier 1 (forecastability), CHEAP variant of expanding_window.yaml — same
+# splitter shape (anchor, min_train_months, val_window_months) but only 2
+# folds instead of 5. NOT for any report a promote() call is based on: this
+# exists purely so exploratory/comparative notebook sections (e.g.
+# notebooks/05_state_features.ipynb's target-transformation comparison,
+# validation.harness.evaluate_candidate's tier1_scenario override) can get
+# a directionally-useful signal without paying for every fold, at real
+# ~15,715-location/~2.15M-row scale where a single fit/predict cycle is
+# itself a genuinely multi-minute cost (see features/assemble.py's
+# "Performance note" and this file's sibling blackout_curve_quick.yaml).
+
+name: expanding_window_quick
+tier: 1
+scenario_type: expanding_window
+description: >
+  Cheap, 2-fold variant of expanding_window for exploratory/comparative use
+  only (e.g. comparing several candidates against each other quickly) —
+  never for a report a promote() decision is actually based on. Same
+  anchor/min_train_months/val_window_months as expanding_window.yaml, so
+  the fold boundaries it does run are directly comparable in kind, just
+  fewer of them.
+source_rationale: >
+  Project Phase 4 step 4.9's first proof run of notebooks/05_state_features
+  .ipynb found the full 5-fold expanding_window scenario, run once per CV
+  fold per target-transform candidate in the exploratory sections, an
+  intractable multi-hour cost even after eliminating build_state_snapshots/
+  compute_location_signatures's redundant recomputation (see
+  features/assemble.py). validation.harness.evaluate_candidate's
+  tier1_scenario override exists to let exactly those exploratory sections
+  point here instead, leaving every promotion-critical run on the full
+  expanding_window.yaml.
+
+splitter:
+  n_folds: 2
+  val_window_months: 6
+  min_train_months: 84
+  anchor_to_2004: true

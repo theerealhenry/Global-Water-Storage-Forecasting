@@ -1,0 +1,43 @@
+# Tier 2 (blackout), CHEAP variant of blackout_curve.yaml — same splitter
+# shape and the same real k_distribution/exception_rate, but only 2 folds
+# and 4 blackout windows per fold instead of 5 folds / 15 windows. NOT for
+# any report a promote() call is based on -- see expanding_window_quick
+# .yaml's identical rationale.
+
+name: blackout_curve_quick
+tier: 2
+scenario_type: blackout_curve
+description: >
+  Cheap, 2-fold/4-window variant of blackout_curve for exploratory/
+  comparative use only (e.g. comparing several candidates against each
+  other quickly) — never for a report a promote() decision is actually
+  based on. Same anchor/min_train_months/val_window_months and the same
+  real k_distribution/exception_rate as blackout_curve.yaml, so the folds
+  and windows it does run are directly comparable in kind, just fewer of
+  them.
+source_rationale: >
+  Project Phase 4 step 4.9's first proof run of notebooks/05_state_features
+  .ipynb found the full 5-fold/15-window blackout_curve scenario, run once
+  per CV fold per target-transform candidate in the exploratory sections,
+  an intractable multi-hour cost even after eliminating
+  build_state_snapshots/compute_location_signatures's redundant
+  recomputation (see features/assemble.py). validation.harness
+  .evaluate_candidate's tier2_scenario override exists to let exactly
+  those exploratory sections point here instead, leaving every
+  promotion-critical run on the full blackout_curve.yaml.
+
+splitter:
+  n_folds: 2
+  val_window_months: 6
+  min_train_months: 84
+  anchor_to_2004: true
+
+# Same real staleness-to-target k values as blackout_curve.yaml -- only the
+# fold/window count shrinks here, not the distribution being sampled from.
+k_distribution: [2, 3, 2, 3, 4, 2, 3, 4, 5, 6, 7, 2]
+
+# Fewer windows per fold than blackout_curve.yaml's 15 -- enough to see a
+# degradation trend cheaply, not a full-rigor curve.
+n_windows: 4
+
+exception_rate: 0.002
